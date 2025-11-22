@@ -160,18 +160,20 @@ public class TouchImageView extends ImageView implements View.OnTouchListener {
         boolean handled = false;
         boolean isZoomed = saveScale > minScale + 0.01f; // Small threshold to account for floating point
         
-        // Handle scale gesture first (pinch zoom)
+        // Always handle scale gesture first (pinch zoom) - needs to see all events
         if (mScaleDetector != null && event.getPointerCount() > 1) {
             handled = mScaleDetector.onTouchEvent(event);
             if (handled) {
                 // Prevent parent from intercepting during pinch zoom
-                getParent().requestDisallowInterceptTouchEvent(true);
+                if (getParent() != null) {
+                    getParent().requestDisallowInterceptTouchEvent(true);
+                }
                 setImageMatrix(matrix);
                 return true;
             }
         }
         
-        // Handle double tap gesture - need to see all events for this
+        // Always handle double tap gesture - needs to see all events
         if (mGestureDetector != null) {
             boolean doubleTapHandled = mGestureDetector.onTouchEvent(event);
             if (doubleTapHandled) {
@@ -195,16 +197,14 @@ public class TouchImageView extends ImageView implements View.OnTouchListener {
                         }
                     } else {
                         mode = NONE;
-                        // When not zoomed, don't consume ACTION_DOWN - let parent handle swipes
-                        // This means we won't get events for double-tap, but swipes will work
+                        // Allow parent to intercept for swipes when not zoomed
                         if (getParent() != null) {
                             getParent().requestDisallowInterceptTouchEvent(false);
                         }
-                        // Return false to let parent handle the swipe gesture
-                        return false;
                     }
                 }
-                break;
+                // Always return true to get events for gesture detectors, but allow parent to intercept on MOVE
+                return true;
 
             case MotionEvent.ACTION_POINTER_DOWN:
                 mode = ZOOM;
@@ -227,15 +227,19 @@ public class TouchImageView extends ImageView implements View.OnTouchListener {
                     float deltaX = Math.abs(curr.x - start.x);
                     float deltaY = Math.abs(curr.y - start.y);
                     // If it's primarily a horizontal movement, let parent handle it (swipe)
-                    if (deltaX > 20 && deltaX > deltaY * 1.2) {
-                        // Horizontal swipe detected - allow parent to intercept and stop handling
+                    if (deltaX > 30 && deltaX > deltaY * 1.5) {
+                        // Horizontal swipe detected - allow parent to intercept
                         if (getParent() != null) {
                             getParent().requestDisallowInterceptTouchEvent(false);
                         }
                         mode = NONE;
-                        // Return false to let parent handle the swipe
+                        // Don't consume - let parent handle the swipe
                         return false;
                     }
+                }
+                // For other cases, continue processing but don't consume if not zoomed
+                if (!isZoomed && mode == NONE) {
+                    return false; // Let parent handle
                 }
                 break;
 
@@ -277,19 +281,22 @@ public class TouchImageView extends ImageView implements View.OnTouchListener {
             return true;
         }
         
-        // When not zoomed and single touch, don't consume - let parent handle swipes
-        // But we need to return true on ACTION_DOWN to get events for double-tap detection
-        // So we'll handle it in ACTION_MOVE instead
-        if (!isZoomed && event.getPointerCount() == 1) {
-            // For ACTION_DOWN, return true to get events, but allow parent to intercept on MOVE
-            if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                return true; // Need to see events for double-tap
+        // When not zoomed and single touch, let parent handle swipes
+        // But we already handled double-tap and pinch above, so those will work
+        if (!isZoomed && event.getPointerCount() == 1 && mode == NONE) {
+            // For ACTION_UP, check if it was a tap (small movement)
+            if (event.getAction() == MotionEvent.ACTION_UP) {
+                int xDiff = (int) Math.abs(curr.x - start.x);
+                int yDiff = (int) Math.abs(curr.y - start.y);
+                if (xDiff < 10 && yDiff < 10) {
+                    // Small tap - could be part of double-tap, but gesture detector already handled it
+                    return false; // Let parent handle if not double-tap
+                }
             }
-            // For other actions when not zoomed, return false to let parent handle
-            return false;
+            return false; // Let parent handle swipes
         }
         
-        return false; // Let parent handle swipes when not zoomed
+        return false;
     }
 
     private void fixTrans() {
