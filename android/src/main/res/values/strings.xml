@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="media_viewer_close">Close viewer</string>
+    <string name="media_viewer_select_quality">Select quality</string>
+    <string name="media_viewer_play_pause">Play or pause</string>
+</resources>
+

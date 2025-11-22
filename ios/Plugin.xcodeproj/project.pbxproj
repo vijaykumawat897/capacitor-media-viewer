@@ -1,0 +1,73 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A1234567890ABCDEF001 /* MediaViewerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890ABCDEF002 /* MediaViewerPlugin.swift */; };
+		A1234567890ABCDEF003 /* MediaViewerPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890ABCDEF004 /* MediaViewerPlugin.m */; };
+		A1234567890ABCDEF005 /* MediaItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890ABCDEF006 /* MediaItem.swift */; };
+		A1234567890ABCDEF007 /* PlaybackState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890ABCDEF008 /* PlaybackState.swift */; };
+		A1234567890ABCDEF009 /* MediaViewerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890ABCDEF00A /* MediaViewerController.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A1234567890ABCDEF002 /* MediaViewerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaViewerPlugin.swift; sourceTree = "<group>"; };
+		A1234567890ABCDEF004 /* MediaViewerPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = MediaViewerPlugin.m; sourceTree = "<group>"; };
+		A1234567890ABCDEF006 /* MediaItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaItem.swift; sourceTree = "<group>"; };
+		A1234567890ABCDEF008 /* PlaybackState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackState.swift; sourceTree = "<group>"; };
+		A1234567890ABCDEF00A /* MediaViewerController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaViewerController.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		A1234567890ABCDEF001 /* Plugin */ = {
+			isa = PBXGroup;
+			children = (
+				A1234567890ABCDEF002 /* MediaViewerPlugin.swift */,
+				A1234567890ABCDEF004 /* MediaViewerPlugin.m */,
+				A1234567890ABCDEF006 /* MediaItem.swift */,
+				A1234567890ABCDEF008 /* PlaybackState.swift */,
+				A1234567890ABCDEF00A /* MediaViewerController.swift */,
+			);
+			path = Plugin;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A1234567890ABCDEF00B /* Plugin */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1234567890ABCDEF00C /* Build configuration list for PBXNativeTarget "Plugin" */;
+			buildPhases = (
+				A1234567890ABCDEF00D /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Plugin;
+			productName = Plugin;
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A1234567890ABCDEF00D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1234567890ABCDEF001 /* MediaViewerPlugin.swift in Sources */,
+				A1234567890ABCDEF003 /* MediaViewerPlugin.m in Sources */,
+				A1234567890ABCDEF005 /* MediaItem.swift in Sources */,
+				A1234567890ABCDEF007 /* PlaybackState.swift in Sources */,
+				A1234567890ABCDEF009 /* MediaViewerController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+	};
+	rootObject = A1234567890ABCDEF00E /* Project object */;
+}
+

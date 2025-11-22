@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+Pods/
+
+# Build outputs
+dist/
+build/
+*.tgz
+*.tar.gz
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Android
+android/.gradle/
+android/local.properties
+android/.idea/
+android/build/
+android/.cxx/
+*.apk
+*.ap_
+*.aab
+
+# iOS
+ios/.swiftpm/
+*.xcuserstate
+*.xcworkspace
+ios/Pods/
+ios/App/Pods/
+ios/App/.swiftpm/
+DerivedData/
+
+# Capacitor
+.capacitor/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Misc
+*.tmp
+*.temp
+.cache/
+

@@ -1,0 +1,8 @@
+platform :ios, '13.0'
+use_frameworks!
+
+target 'Plugin' do
+  capacitor_pod
+  # Add your Pods here
+end
+

@@ -1,0 +1,3 @@
+include ':capacitor-media-viewer'
+project(':capacitor-media-viewer').projectDir = new File('../')
+

@@ -1,0 +1,67 @@
+# Source files (only dist is needed)
+src/
+tsconfig.json
+rollup.config.js
+
+# Documentation (keep only README)
+*.md
+!README.md
+
+*.tgz
+*.tar.gz
+
+# Development files
+.gitignore
+.git/
+.eslintrc.json
+.prettierrc
+.prettierignore
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+*.test.ts
+*.spec.ts
+__tests__/
+test/
+tests/
+*.test.js
+*.spec.js
+
+# Build configs (not needed in package)
+.travis.yml
+.github/
+.circleci/
+
+# Development dependencies
+node_modules/
+
+# Build artifacts (dist is needed, but source maps not)
+*.map
+!dist/**/*.map
+
+# Android build files
+android/build/
+android/.gradle/
+android/local.properties
+android/.idea/
+
+# iOS build files
+ios/Pods/
+ios/.swiftpm/
+*.xcworkspace
+*.xcuserstate
+DerivedData/
+
+# Misc
+*.log
+*.tmp
+.cache/
+

@@ -1,0 +1,92 @@
+{
+  "name": "capacitor-media-viewer",
+  "version": "1.0.0",
+  "description": "A native media viewer for Capacitor apps with support for videos and images, swipe navigation, and quality selection",
+  "main": "dist/esm/src/index.js",
+  "module": "dist/esm/src/index.js",
+  "types": "dist/esm/src/index.d.ts",
+  "unpkg": "dist/plugin.js",
+  "files": [
+    "android/",
+    "ios/",
+    "dist/",
+    "capacitor.plugin.ts"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "bugs": {
+    "url": ""
+  },
+  "keywords": [
+    "capacitor",
+    "plugin",
+    "native",
+    "video",
+    "media",
+    "viewer",
+    "player",
+    "ionic",
+    "react"
+  ],
+  "scripts": {
+    "verify": "npm run verify:ios && npm run verify:android && npm run verify:web",
+    "verify:ios": "cd ios && pod install --repo-update && xcodebuild -workspace Plugin.xcworkspace -scheme Plugin -destination generic/platform=iOS && cd ..",
+    "verify:android": "cd android && ./gradlew clean build test && cd ..",
+    "verify:web": "npm run build",
+    "lint": "npm run eslint && npm run prettier -- --check && npm run swiftlint && npm run ktlint",
+    "eslint": "eslint . --ext ts",
+    "eslint:fix": "eslint . --ext ts --fix",
+    "prettier": "prettier \"**/*.{css,html,ts,js,java}\"",
+    "prettier:fix": "prettier \"**/*.{css,html,ts,js,java}\" --write",
+    "swiftlint": "node-swiftlint lint",
+    "ktlint": "cd android && ./gradlew ktlint && cd ..",
+    "build": "npm run clean && tsc && npm run rollup",
+    "clean": "if exist dist rmdir /s /q dist",
+    "watch": "tsc --watch",
+    "rollup": "rollup -c rollup.config.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@capacitor/core": "^5.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^5.0.0",
+    "@capacitor/cli": "^5.0.0",
+    "@capacitor/ios": "^5.0.0",
+    "@ionic/eslint-config": "^0.3.0",
+    "@ionic/prettier-config": "^1.0.1",
+    "@ionic/swiftlint-config": "^1.1.2",
+    "@types/jest": "^27.0.3",
+    "@types/node": "^16.18.11",
+    "eslint": "^8.15.0",
+    "jest": "^27.5.1",
+    "prettier": "^2.6.2",
+    "prettier-plugin-java": "^1.6.2",
+    "rollup": "^2.70.2",
+    "@rollup/plugin-node-resolve": "^13.0.0",
+    "swiftlint": "^1.0.1",
+    "typescript": "~5.0.0"
+  },
+  "prettier": "@ionic/prettier-config",
+  "swiftlint": {
+    "rulesFiles": [
+      "@ionic/swiftlint-config"
+    ]
+  },
+  "eslintConfig": {
+    "extends": "@ionic/eslint-config/recommended"
+  },
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    },
+    "android": {
+      "src": "android"
+    }
+  }
+}
+
