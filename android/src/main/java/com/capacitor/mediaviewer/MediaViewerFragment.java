@@ -46,7 +46,7 @@ public class MediaViewerFragment extends DialogFragment {
 private FrameLayout videoContainer;
 private FrameLayout overlayContainer;
 private TextureView textureView;
-    private ImageView mediaImageView;
+    private TouchImageView mediaImageView;
     private ImageView videoThumbnail;
     private ExoPlayer exoPlayer;
     private Surface videoSurface;
@@ -344,9 +344,8 @@ private TextureView textureView;
                     toggleControls();
                     return true;
                 }
-                // For images, dismiss on tap
-                dismiss();
-                return true;
+                // For images, do nothing - only close button can dismiss
+                return false;
             }
         });
         
@@ -359,7 +358,32 @@ private TextureView textureView;
             return;
         }
         
-        overlayContainer.setOnTouchListener((v, event) -> handleOverlayTouch(event));
+        overlayContainer.setOnTouchListener((v, event) -> {
+            // If image is visible, check if we should handle swipe gestures
+            if (mediaImageView != null && mediaImageView.getVisibility() == View.VISIBLE) {
+                // Only handle touches on close button or controls
+                if (closeButton != null && isPointInsideView(closeButton, event)) {
+                    return false; // Let close button handle it
+                }
+                if (controlsContainer != null && isPointInsideView(controlsContainer, event)) {
+                    return false; // Let controls handle it
+                }
+                // For images, let gesture detector handle swipes (it will work with image view)
+                // The image view will return false for horizontal swipes when not zoomed
+                return handleOverlayTouch(event);
+            }
+            return handleOverlayTouch(event);
+        });
+        
+        // Make overlay not clickable when image is visible to allow touch events to pass through
+        updateOverlayClickable();
+    }
+    
+    private void updateOverlayClickable() {
+        if (overlayContainer == null) return;
+        boolean imageVisible = mediaImageView != null && mediaImageView.getVisibility() == View.VISIBLE;
+        overlayContainer.setClickable(!imageVisible);
+        overlayContainer.setFocusable(!imageVisible);
     }
 
     private boolean handleOverlayTouch(MotionEvent event) {
@@ -376,6 +400,22 @@ private TextureView textureView;
             if (isSwiping && event.getAction() == MotionEvent.ACTION_UP) {
                 cancelCurrentSwipe();
             }
+            return false;
+        }
+
+        // If image is visible, let it handle touch events (for zoom)
+        if (mediaImageView != null && mediaImageView.getVisibility() == View.VISIBLE) {
+            // Only handle swipe gestures, let image view handle zoom
+            if (isSwiping && event.getAction() == MotionEvent.ACTION_UP) {
+                completeSwipeAnimation(0);
+                return true;
+            }
+            // For images, only handle horizontal swipes, let image view handle everything else
+            if (gestureDetector != null && event.getPointerCount() == 1) {
+                // Check if it's a horizontal swipe
+                return gestureDetector.onTouchEvent(event);
+            }
+            // Let image view handle multi-touch (pinch zoom)
             return false;
         }
 
@@ -421,16 +461,13 @@ private TextureView textureView;
 
         MediaItem item = mediaItems.get(currentIndex);
 
-        // Reset quality to Auto for new video (if quality variants are available)
-        if ("video".equals(item.type) && (item.qualityVariants == null || item.qualityVariants.isEmpty())) {
-            // No quality variants, keep current quality
-        } else {
-            // Reset to Auto for new media item
+        // Reset quality to Auto for new video
+        if ("VIDEO".equals(item.type)) {
             currentQuality = "Auto";
             actualPlayingQuality = null;
         }
 
-        if ("video".equals(item.type)) {
+        if ("VIDEO".equals(item.type)) {
             displayVideo(item);
         } else {
             displayImage(item);
@@ -472,11 +509,11 @@ private TextureView textureView;
 
         // Show thumbnail if available, otherwise keep black background
         if (videoThumbnail != null) {
-            Log.d("MediaViewerFragment", "videoThumbnail: " + videoThumbnail.toString() + "item.thumbnailUrl: " + item.thumbnailUrl);
-            if (item.thumbnailUrl != null && !item.thumbnailUrl.isEmpty()) {
+            Log.d("MediaViewerFragment", "videoThumbnail: " + videoThumbnail.toString() + "item.thumbnail: " + item.thumbnail);
+            if (item.thumbnail != null && !item.thumbnail.isEmpty()) {
                 videoThumbnail.setVisibility(View.VISIBLE);
                 Glide.with(this)
-                    .load(item.thumbnailUrl)
+                    .load(item.thumbnail)
                     .into(videoThumbnail);
             } else {
                 videoThumbnail.setVisibility(View.GONE);
@@ -568,7 +605,7 @@ private TextureView textureView;
             exoPlayer.setVideoSurface(surface);
         }
 
-        androidx.media3.common.MediaItem mediaItem = androidx.media3.common.MediaItem.fromUri(item.url);
+        androidx.media3.common.MediaItem mediaItem = androidx.media3.common.MediaItem.fromUri(item.path);
         exoPlayer.setMediaItem(mediaItem);
         exoPlayer.prepare();
         if (startPositionMs > 0) {
@@ -642,18 +679,6 @@ private TextureView textureView;
             }
         });
 
-        // If HLS and no quality variants yet, parse them in background
-        if ((item.qualityVariants == null || item.qualityVariants.isEmpty()) 
-            && HlsPlaylistParser.isHlsUrl(item.url)) {
-            new Thread(() -> {
-                List<QualityVariant> variants = HlsPlaylistParser.parseMasterPlaylist(item.url);
-                if (variants != null && !variants.isEmpty()) {
-                    requireActivity().runOnUiThread(() -> {
-                        item.qualityVariants = variants;
-                    });
-                }
-            }).start();
-        }
 
         // Show controls initially, then auto-hide
         showControls();
@@ -664,59 +689,8 @@ private TextureView textureView;
     }
 
     private void showQualitySelector() {
-        MediaItem currentItem = mediaItems.get(currentIndex);
-        if (currentItem == null || currentItem.qualityVariants == null || currentItem.qualityVariants.isEmpty()) {
-            // No quality variants available
-            return;
-        }
-        
-        // Create quality labels array with "Auto" as first option
-        String[] qualityLabels = new String[currentItem.qualityVariants.size() + 1];
-        qualityLabels[0] = "Auto";
-        for (int i = 0; i < currentItem.qualityVariants.size(); i++) {
-            qualityLabels[i + 1] = currentItem.qualityVariants.get(i).label;
-        }
-        
-        // Build display labels (show actual quality next to Auto if available)
-        String[] displayLabels = new String[qualityLabels.length];
-        if (currentQuality == null || "Auto".equals(currentQuality)) {
-            if (actualPlayingQuality != null && !actualPlayingQuality.isEmpty()) {
-                displayLabels[0] = "Auto (" + actualPlayingQuality + ")";
-            } else {
-                displayLabels[0] = "Auto";
-            }
-        } else {
-            displayLabels[0] = "Auto";
-        }
-        for (int i = 0; i < currentItem.qualityVariants.size(); i++) {
-            displayLabels[i + 1] = qualityLabels[i + 1];
-        }
-        
-        ArrayAdapter<String> adapter = new ArrayAdapter<String>(requireContext(), android.R.layout.simple_list_item_1, displayLabels) {
-            @NonNull
-            @Override
-            public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
-                View view = super.getView(position, convertView, parent);
-                TextView textView = view.findViewById(android.R.id.text1);
-                textView.setTextColor(Color.WHITE);
-                
-                // Highlight current selection
-                String quality = qualityLabels[position];
-                if (quality.equals(currentQuality) || (quality.equals("Auto") && (currentQuality == null || currentQuality.equals("Auto")))) {
-                    textView.setTextColor(Color.parseColor("#4CAF50")); // Green for selected
-                }
-                
-                return view;
-            }
-        };
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
-        builder.setTitle("Select Quality");
-        builder.setAdapter(adapter, (dialog, which) -> {
-            String selectedQuality = qualityLabels[which];
-            setQuality(selectedQuality);
-        });
-        builder.show();
+        // Quality selector removed - quality variants no longer supported
+        return;
     }
     
     private void updateTextureViewAspectRatio(int videoWidth, int videoHeight) {
@@ -754,103 +728,7 @@ private TextureView textureView;
     }
 
     private void updateAutoQuality() {
-        // Update actual playing quality when in Auto mode
-        if (exoPlayer == null || !"Auto".equals(currentQuality)) {
-            return;
-        }
-
-        try {
-            // Get video size from ExoPlayer
-            int width = exoPlayer.getVideoSize().width;
-            int height = exoPlayer.getVideoSize().height;
-            
-            if (width > 0 && height > 0) {
-                MediaItem currentItem = mediaItems.get(currentIndex);
-                if (currentItem != null && currentItem.qualityVariants != null) {
-                    // Try to match video size with quality variants
-                    String detectedQuality = detectQualityFromSize(width, height, currentItem.qualityVariants);
-                    if (detectedQuality != null && !detectedQuality.equals(actualPlayingQuality)) {
-                        actualPlayingQuality = detectedQuality;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            // Ignore errors in quality detection
-            Log.d("MediaViewerFragment", "Error detecting quality: " + e.getMessage());
-        }
-    }
-
-    private String detectQualityFromSize(int width, int height, List<QualityVariant> variants) {
-        if (variants == null || variants.isEmpty()) {
-            return null;
-        }
-
-        // Calculate approximate resolution
-        int totalPixels = width * height;
-        
-        // Try to match with quality variants based on label
-        // Common quality labels contain resolution info like "720p", "1080p", etc.
-        for (QualityVariant variant : variants) {
-            String label = variant.label.toLowerCase();
-            
-            // Check for common patterns
-            if (label.contains("4k") || label.contains("2160")) {
-                if (totalPixels >= 3500000) { // ~4K: 3840x2160 or close
-                    return variant.label;
-                }
-            } else if (label.contains("1080") || label.contains("full hd")) {
-                if (totalPixels >= 1800000 && totalPixels < 3500000) { // ~1080p: 1920x1080
-                    return variant.label;
-                }
-            } else if (label.contains("720")) {
-                if (totalPixels >= 800000 && totalPixels < 1800000) { // ~720p: 1280x720
-                    return variant.label;
-                }
-            } else if (label.contains("480") || label.contains("sd")) {
-                if (totalPixels >= 300000 && totalPixels < 800000) { // ~480p: 854x480
-                    return variant.label;
-                }
-            } else if (label.contains("360")) {
-                if (totalPixels >= 100000 && totalPixels < 300000) { // ~360p: 640x360
-                    return variant.label;
-                }
-            }
-        }
-
-        // If no match, return the variant closest in resolution
-        QualityVariant closest = null;
-        int minDiff = Integer.MAX_VALUE;
-        
-        for (QualityVariant variant : variants) {
-            // Try to extract resolution from label
-            int variantPixels = extractResolutionFromLabel(variant.label);
-            if (variantPixels > 0) {
-                int diff = Math.abs(variantPixels - totalPixels);
-                if (diff < minDiff) {
-                    minDiff = diff;
-                    closest = variant;
-                }
-            }
-        }
-
-        return closest != null ? closest.label : null;
-    }
-
-    private int extractResolutionFromLabel(String label) {
-        // Try to extract resolution like "720p", "1080p", etc.
-        label = label.toLowerCase();
-        if (label.contains("4k") || label.contains("2160")) {
-            return 3840 * 2160;
-        } else if (label.contains("1080")) {
-            return 1920 * 1080;
-        } else if (label.contains("720")) {
-            return 1280 * 720;
-        } else if (label.contains("480")) {
-            return 854 * 480;
-        } else if (label.contains("360")) {
-            return 640 * 360;
-        }
-        return 0;
+        // Quality detection removed - quality variants no longer supported
     }
 
     private void togglePlayPause() {
@@ -950,10 +828,34 @@ private TextureView textureView;
         }
 
         mediaImageView.setVisibility(View.VISIBLE);
-        mediaImageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        
+        // Update overlay to allow touch events through
+        updateOverlayClickable();
+        
+        // Reset zoom when displaying new image
+        mediaImageView.resetZoom();
 
         Glide.with(this)
-            .load(item.url)
+            .load(item.path)
+            .listener(new com.bumptech.glide.request.RequestListener<android.graphics.drawable.Drawable>() {
+                @Override
+                public boolean onLoadFailed(@Nullable com.bumptech.glide.load.engine.GlideException e, Object model, com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable> target, boolean isFirstResource) {
+                    return false;
+                }
+
+                @Override
+                public boolean onResourceReady(android.graphics.drawable.Drawable resource, Object model, com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable> target, com.bumptech.glide.load.DataSource dataSource, boolean isFirstResource) {
+                    // Fit to screen after image is loaded
+                    if (mediaImageView != null) {
+                        mediaImageView.post(() -> {
+                            if (mediaImageView.getDrawable() != null) {
+                                mediaImageView.fitToScreenPublic();
+                            }
+                        });
+                    }
+                    return false;
+                }
+            })
             .into(mediaImageView);
 
         hideControls();
@@ -1208,7 +1110,7 @@ private TextureView textureView;
             // Fallback: if we have a current item and it's a video, return videoContainer
             if (mediaItems != null && currentIndex >= 0 && currentIndex < mediaItems.size()) {
                 MediaItem item = mediaItems.get(currentIndex);
-                if ("video".equals(item.type)) {
+                if ("VIDEO".equals(item.type)) {
                     return videoContainer;
                 }
             }
@@ -1229,7 +1131,7 @@ private TextureView textureView;
         ));
         container.setBackgroundColor(Color.BLACK);
         
-        if ("video".equals(item.type)) {
+        if ("VIDEO".equals(item.type)) {
             // Create video thumbnail view
             ImageView thumbnail = new ImageView(requireContext());
             thumbnail.setLayoutParams(new FrameLayout.LayoutParams(
@@ -1239,8 +1141,8 @@ private TextureView textureView;
             thumbnail.setScaleType(ImageView.ScaleType.FIT_CENTER);
             container.addView(thumbnail);
             
-            if (item.thumbnailUrl != null && !item.thumbnailUrl.isEmpty()) {
-                Glide.with(this).load(item.thumbnailUrl).into(thumbnail);
+            if (item.thumbnail != null && !item.thumbnail.isEmpty()) {
+                Glide.with(this).load(item.thumbnail).into(thumbnail);
             }
         } else {
             // Create image view
@@ -1252,7 +1154,7 @@ private TextureView textureView;
             imageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
             container.addView(imageView);
             
-            Glide.with(this).load(item.url).into(imageView);
+            Glide.with(this).load(item.path).into(imageView);
         }
         
         return container;
@@ -1277,111 +1179,7 @@ private TextureView textureView;
     }
 
     public void setQuality(String quality) {
-        if (mediaItems == null || currentIndex < 0 || currentIndex >= mediaItems.size()) {
-            return;
-        }
-
-        MediaItem currentItem = mediaItems.get(currentIndex);
-        if (currentItem == null) {
-            return;
-        }
-
-        // Handle "Auto" option
-        if ("Auto".equals(quality)) {
-            long currentPosition = exoPlayer != null ? exoPlayer.getCurrentPosition() : 0;
-            boolean wasPlaying = exoPlayer != null && exoPlayer.isPlaying();
-            currentQuality = "Auto";
-            actualPlayingQuality = null; // Reset, will be detected when playback starts
-
-            // Use original URL and let ExoPlayer choose automatically
-            MediaItem playbackItem = cloneMediaItemWithUrl(currentItem, currentItem.url);
-            android.graphics.SurfaceTexture surfaceTexture = textureView != null ? textureView.getSurfaceTexture() : null;
-
-            // Show thumbnail again when switching quality (if available)
-            if (videoThumbnail != null && currentItem.thumbnailUrl != null && !currentItem.thumbnailUrl.isEmpty()) {
-                videoThumbnail.setVisibility(View.VISIBLE);
-                Glide.with(this)
-                    .load(currentItem.thumbnailUrl)
-                    .into(videoThumbnail);
-            } else if (videoThumbnail != null) {
-                videoThumbnail.setVisibility(View.GONE);
-            }
-            
-            // Hide video initially when switching quality (use alpha)
-            if (textureView != null) {
-                textureView.setAlpha(0f);
-            }
-
-            releasePlayer(false);
-
-            if (surfaceTexture != null) {
-                preparePlayerWithSurface(playbackItem, surfaceTexture, currentPosition, wasPlaying);
-            } else if (textureView != null) {
-                textureView.post(() -> {
-                    android.graphics.SurfaceTexture availableSurface = textureView.getSurfaceTexture();
-                    if (availableSurface != null) {
-                        preparePlayerWithSurface(playbackItem, availableSurface, currentPosition, wasPlaying);
-                    }
-                });
-            }
-            return;
-        }
-
-        // Handle manual quality selection
-        if (currentItem.qualityVariants == null) {
-            return;
-        }
-
-        for (QualityVariant variant : currentItem.qualityVariants) {
-            if (variant.label.equals(quality)) {
-                long currentPosition = exoPlayer != null ? exoPlayer.getCurrentPosition() : 0;
-                boolean wasPlaying = exoPlayer != null && exoPlayer.isPlaying();
-                currentQuality = quality;
-                actualPlayingQuality = quality; // Set actual quality to selected one
-
-                MediaItem playbackItem = cloneMediaItemWithUrl(currentItem, variant.url);
-                android.graphics.SurfaceTexture surfaceTexture = textureView != null ? textureView.getSurfaceTexture() : null;
-
-                // Show thumbnail again when switching quality (if available)
-                if (videoThumbnail != null && currentItem.thumbnailUrl != null && !currentItem.thumbnailUrl.isEmpty()) {
-                    videoThumbnail.setVisibility(View.VISIBLE);
-                    Glide.with(this)
-                        .load(currentItem.thumbnailUrl)
-                        .into(videoThumbnail);
-                } else if (videoThumbnail != null) {
-                    videoThumbnail.setVisibility(View.GONE);
-                }
-                
-                // Hide video initially when switching quality (use alpha)
-                if (textureView != null) {
-                    textureView.setAlpha(0f);
-                }
-
-                releasePlayer(false);
-
-                if (surfaceTexture != null) {
-                    preparePlayerWithSurface(playbackItem, surfaceTexture, currentPosition, wasPlaying);
-                } else if (textureView != null) {
-                    textureView.post(() -> {
-                        android.graphics.SurfaceTexture availableSurface = textureView.getSurfaceTexture();
-                        if (availableSurface != null) {
-                            preparePlayerWithSurface(playbackItem, availableSurface, currentPosition, wasPlaying);
-                        }
-                    });
-                }
-                break;
-            }
-        }
-    }
-
-    private MediaItem cloneMediaItemWithUrl(MediaItem baseItem, String url) {
-        MediaItem clone = new MediaItem();
-        clone.url = url;
-        clone.type = baseItem.type;
-        clone.title = baseItem.title;
-        clone.thumbnailUrl = baseItem.thumbnailUrl;
-        clone.qualityVariants = baseItem.qualityVariants;
-        return clone;
+        // Quality selection removed - quality variants no longer supported
     }
 
     public PlaybackState getPlaybackState() {

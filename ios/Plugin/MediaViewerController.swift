@@ -2,7 +2,7 @@ import UIKit
 import AVKit
 import AVFoundation
 
-class MediaViewerController: UIViewController {
+class MediaViewerController: UIViewController, UIScrollViewDelegate, UIGestureRecognizerDelegate {
     private var mediaItems: [MediaItem] = []
     private var currentIndex: Int = 0
     private var titleText: String = ""
@@ -10,6 +10,7 @@ class MediaViewerController: UIViewController {
     
     private var containerView: UIView!
     private var playerViewController: AVPlayerViewController?
+    private var imageScrollView: UIScrollView?
     private var imageView: UIImageView?
     private var player: AVPlayer?
     private var playbackObserver: NSKeyValueObservation?
@@ -75,13 +76,16 @@ class MediaViewerController: UIViewController {
     
     private func setupGestures() {
         gestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        gestureRecognizer.delegate = self
         view.addGestureRecognizer(gestureRecognizer)
-        
-        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap))
-        view.addGestureRecognizer(tapGesture)
     }
     
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        // Don't handle pan if image is zoomed (let scroll view handle it)
+        if let scrollView = imageScrollView, scrollView.zoomScale > scrollView.minimumZoomScale {
+            return
+        }
+        
         let translation = gesture.translation(in: view)
         
         switch gesture.state {
@@ -111,12 +115,6 @@ class MediaViewerController: UIViewController {
         }
     }
     
-    @objc private func handleTap() {
-        dismiss(animated: true) {
-            self.plugin?.notifyViewerDismissed()
-        }
-    }
-    
     @objc private func closeButtonTapped() {
         dismiss(animated: true) {
             self.plugin?.notifyViewerDismissed()
@@ -130,11 +128,13 @@ class MediaViewerController: UIViewController {
         
         // Clear previous media
         containerView.subviews.forEach { $0.removeFromSuperview() }
+        imageScrollView = nil
+        imageView = nil
         releasePlayer()
         
         let item = mediaItems[currentIndex]
         
-        if item.type == "video" {
+        if item.type == "VIDEO" {
             displayVideo(item)
         } else {
             displayImage(item)
@@ -144,7 +144,7 @@ class MediaViewerController: UIViewController {
     }
     
     private func displayVideo(_ item: MediaItem) {
-        guard let url = URL(string: item.url) else {
+        guard let url = URL(string: item.path) else {
             return
         }
         
@@ -169,60 +169,98 @@ class MediaViewerController: UIViewController {
             playerVC.didMove(toParent: self)
         }
         
-        // If HLS and no quality variants yet, parse them in background
-        if item.qualityVariants.isEmpty && HlsPlaylistParser.isHlsUrl(item.url) {
-            HlsPlaylistParser.parseMasterPlaylist(item.url) { [weak self] variants in
-                guard let self = self else { return }
-                if !variants.isEmpty {
-                    item.qualityVariants = variants
-                }
-            }
-        }
-        
         player?.play()
         startPlaybackStateMonitoring()
     }
     
     private func displayImage(_ item: MediaItem) {
-        guard let url = URL(string: item.url) else {
+        guard let url = URL(string: item.path) else {
             return
         }
         
-        imageView = UIImageView()
-        imageView?.contentMode = .scaleAspectFit
-        imageView?.translatesAutoresizingMaskIntoConstraints = false
-        imageView?.backgroundColor = .black
+        // Remove previous scroll view if exists
+        imageScrollView?.removeFromSuperview()
+        imageScrollView = nil
+        imageView = nil
         
-        if let imageView = imageView {
-            containerView.addSubview(imageView)
+        // Create scroll view for zoom
+        let scrollView = UIScrollView()
+        scrollView.delegate = self
+        scrollView.minimumZoomScale = 1.0
+        scrollView.maximumZoomScale = 4.0
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.backgroundColor = .black
+        
+        // Create image view
+        let imgView = UIImageView()
+        imgView.contentMode = .scaleAspectFit
+        imgView.translatesAutoresizingMaskIntoConstraints = false
+        imgView.backgroundColor = .black
+        imgView.isUserInteractionEnabled = true
+        
+        // Add double tap gesture for zoom
+        let doubleTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
+        doubleTapGesture.numberOfTapsRequired = 2
+        imgView.addGestureRecognizer(doubleTapGesture)
+        
+        scrollView.addSubview(imgView)
+        containerView.addSubview(scrollView)
+        
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: containerView.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
             
-            NSLayoutConstraint.activate([
-                imageView.topAnchor.constraint(equalTo: containerView.topAnchor),
-                imageView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
-                imageView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
-                imageView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
-            ])
+            imgView.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            imgView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+            imgView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            imgView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            imgView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+            imgView.heightAnchor.constraint(equalTo: scrollView.heightAnchor)
+        ])
+        
+        imageScrollView = scrollView
+        imageView = imgView
+        
+        // Load image asynchronously
+        DispatchQueue.global().async { [weak self] in
+            var image: UIImage?
             
-            // Load image asynchronously
-            DispatchQueue.global().async { [weak self] in
-                var image: UIImage?
-                
-                // Try loading from URL data first
-                if let data = try? Data(contentsOf: url) {
-                    image = UIImage(data: data)
-                }
-                
-                // If that fails and it's a local file, try loading directly
-                if image == nil && url.isFileURL {
-                    image = UIImage(contentsOfFile: url.path)
-                }
-                
-                if let image = image {
-                    DispatchQueue.main.async {
-                        self?.imageView?.image = image
-                    }
+            // Try loading from URL data first
+            if let data = try? Data(contentsOf: url) {
+                image = UIImage(data: data)
+            }
+            
+            // If that fails and it's a local file, try loading directly
+            if image == nil && url.isFileURL {
+                image = UIImage(contentsOfFile: url.path)
+            }
+            
+            if let image = image {
+                DispatchQueue.main.async {
+                    self?.imageView?.image = image
                 }
             }
+        }
+    }
+    
+    @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+        guard let scrollView = imageScrollView else { return }
+        
+        if scrollView.zoomScale > scrollView.minimumZoomScale {
+            // Zoom out
+            scrollView.setZoomScale(scrollView.minimumZoomScale, animated: true)
+        } else {
+            // Zoom in
+            let point = gesture.location(in: imageView)
+            let zoomRect = CGRect(x: point.x - scrollView.bounds.width / 4,
+                                 y: point.y - scrollView.bounds.height / 4,
+                                 width: scrollView.bounds.width / 2,
+                                 height: scrollView.bounds.height / 2)
+            scrollView.zoom(to: zoomRect, animated: true)
         }
     }
     
@@ -261,31 +299,7 @@ class MediaViewerController: UIViewController {
     }
     
     func setQuality(_ quality: String) {
-        let item = mediaItems[currentIndex]
-        guard item.type == "video", let qualityVariants = item.qualityVariants else {
-            return
-        }
-        
-        for variant in qualityVariants {
-            if variant.label == quality, let url = URL(string: variant.url) {
-                let currentTime = player?.currentTime()
-                let wasPlaying = player?.rate ?? 0 > 0
-                
-                let newPlayerItem = AVPlayerItem(url: url)
-                player?.replaceCurrentItem(with: newPlayerItem)
-                
-                if let currentTime = currentTime {
-                    player?.seek(to: currentTime)
-                }
-                
-                if wasPlaying {
-                    player?.play()
-                }
-                
-                currentQuality = quality
-                break
-            }
-        }
+        // Quality selection removed - quality variants no longer supported
     }
     
     func getPlaybackState() -> PlaybackState? {
@@ -299,6 +313,28 @@ class MediaViewerController: UIViewController {
         state.duration = CMTimeGetSeconds(player.currentItem?.duration ?? CMTime.zero)
         state.currentQuality = currentQuality
         return state
+    }
+    
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+        return imageView
+    }
+    
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        // Allow pan gesture to work with scroll view zoom
+        if otherGestureRecognizer.view is UIScrollView {
+            return true
+        }
+        return false
+    }
+    
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        // Don't interfere with scroll view gestures when zoomed
+        if let scrollView = imageScrollView, scrollView.zoomScale > scrollView.minimumZoomScale {
+            if otherGestureRecognizer.view is UIScrollView {
+                return true
+            }
+        }
+        return false
     }
     
     private func releasePlayer() {
@@ -315,6 +351,7 @@ class MediaViewerController: UIViewController {
         player?.pause()
         player = nil
         imageView = nil
+        imageScrollView = nil
     }
     
     override func viewDidDisappear(_ animated: Bool) {

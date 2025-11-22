@@ -1,6 +1,6 @@
 {
   "name": "capacitor-media-viewer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A native media viewer for Capacitor apps with support for videos and images, swipe navigation, and quality selection",
   "main": "dist/esm/src/index.js",
   "module": "dist/esm/src/index.js",
@@ -16,10 +16,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/vijaykumawat897/capacitor-media-viewer"
   },
   "bugs": {
-    "url": ""
+    "url": "https://github.com/vijaykumawat897/capacitor-media-viewer/issues"
   },
   "keywords": [
     "capacitor",

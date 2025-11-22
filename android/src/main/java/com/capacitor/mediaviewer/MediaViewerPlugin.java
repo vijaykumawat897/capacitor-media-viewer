@@ -164,29 +164,10 @@ public class MediaViewerPlugin extends Plugin {
         for (int i = 0; i < itemsArray.length(); i++) {
             JSONObject itemObj = itemsArray.getJSONObject(i);
             MediaItem item = new MediaItem();
-            item.url = itemObj.getString("url");
+            item.path = itemObj.getString("path");
             item.type = itemObj.getString("type");
-            item.title = itemObj.optString("title", null);
-
-            if (itemObj.has("qualityVariants")) {
-                JSONArray qualityArray = itemObj.getJSONArray("qualityVariants");
-                item.qualityVariants = new ArrayList<>();
-                for (int j = 0; j < qualityArray.length(); j++) {
-                    JSONObject qualityObj = qualityArray.getJSONObject(j);
-                    QualityVariant variant = new QualityVariant();
-                    variant.label = qualityObj.getString("label");
-                    variant.url = qualityObj.getString("url");
-                    item.qualityVariants.add(variant);
-                }
-            } else if ("video".equals(item.type) && HlsPlaylistParser.isHlsUrl(item.url)) {
-                // Automatically parse HLS master playlist for quality variants
-                new Thread(() -> {
-                    List<QualityVariant> variants = HlsPlaylistParser.parseMasterPlaylist(item.url);
-                    if (variants != null && !variants.isEmpty()) {
-                        item.qualityVariants = variants;
-                    }
-                }).start();
-            }
+            item.alt = itemObj.optString("alt", null);
+            item.thumbnail = itemObj.optString("thumbnail", null);
 
             items.add(item);
         }

@@ -27,35 +27,16 @@ public class MediaViewerPlugin: CAPPlugin {
         
         var mediaItems: [MediaItem] = []
         for itemDict in itemsArray {
-            guard let urlString = itemDict["url"] as? String,
+            guard let pathString = itemDict["path"] as? String,
                   let typeString = itemDict["type"] as? String else {
                 continue
             }
             
             let item = MediaItem()
-            item.url = urlString
+            item.path = pathString
             item.type = typeString
-            item.title = itemDict["title"] as? String
-            
-            if let qualityVariantsArray = itemDict["qualityVariants"] as? [[String: Any]] {
-                item.qualityVariants = []
-                for variantDict in qualityVariantsArray {
-                    if let label = variantDict["label"] as? String,
-                       let url = variantDict["url"] as? String {
-                        let variant = QualityVariant()
-                        variant.label = label
-                        variant.url = url
-                        item.qualityVariants.append(variant)
-                    }
-                }
-            } else if item.type == "video" && HlsPlaylistParser.isHlsUrl(item.url) {
-                // Automatically parse HLS master playlist for quality variants
-                HlsPlaylistParser.parseMasterPlaylist(item.url) { variants in
-                    if !variants.isEmpty {
-                        item.qualityVariants = variants
-                    }
-                }
-            }
+            item.alt = itemDict["alt"] as? String
+            item.thumbnail = itemDict["thumbnail"] as? String
             
             mediaItems.append(item)
         }

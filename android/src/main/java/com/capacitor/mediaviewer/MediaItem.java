@@ -1,12 +1,9 @@
 package com.capacitor.mediaviewer;
 
-import java.util.List;
-
 public class MediaItem {
-    public String url;
-    public String type; // "video" or "image"
-    public String title;
-    public String thumbnailUrl;
-    public List<QualityVariant> qualityVariants;
+    public String path;
+    public String type; // "IMAGE" or "VIDEO"
+    public String alt;
+    public String thumbnail;
 }
 

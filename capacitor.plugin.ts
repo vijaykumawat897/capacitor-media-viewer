@@ -2,37 +2,23 @@ import { PluginListenerHandle } from '@capacitor/core';
 
 export interface MediaItem {
   /**
-   * Media URL (video or image)
+   * Media path (video or image)
    */
-  url: string;
+  path: string;
   /**
-   * Media type: 'video' or 'image'
+   * Media type: 'IMAGE' or 'VIDEO'
    */
-  type: 'video' | 'image';
+  type: 'IMAGE' | 'VIDEO';
   /**
-   * Optional title/name for the media
+   * Optional alt text for the media
    */
-  title?: string;
+  alt?: string;
   /**
-   * Optional thumbnail URL for videos
+   * Optional thumbnail path for videos
    */
-  thumbnailUrl?: string;
-  /**
-   * Optional quality variants for video (e.g., [{ label: 'HD', url: '...' }])
-   */
-  qualityVariants?: QualityVariant[];
+  thumbnail?: string;
 }
 
-export interface QualityVariant {
-  /**
-   * Quality label (e.g., 'HD', 'SD', '720p')
-   */
-  label: string;
-  /**
-   * Video URL for this quality
-   */
-  url: string;
-}
 
 export interface ShowMediaViewerOptions {
   /**

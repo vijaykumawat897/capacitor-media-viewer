@@ -170,21 +170,20 @@ const MediaViewerExample: React.FC = () => {
 
   const mediaItems = [
     {
-      url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-      type: 'video' as const,
-      title: 'Big Buck Bunny',
-      thumbnailUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg'
+      path: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+      type: 'VIDEO' as const,
+      alt: 'Big Buck Bunny',
+      thumbnail: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg'
     },
     {
-      url: 'https://picsum.photos/1920/1080',
-      type: 'image' as const,
-      title: 'Sample Image'
+      path: 'https://picsum.photos/1920/1080',
+      type: 'IMAGE' as const,
+      alt: 'Sample Image'
     },
     {
-      url: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
-      type: 'video' as const,
-      title: 'HLS Stream Test'
-      // Quality variants will be automatically detected!
+      path: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
+      type: 'VIDEO' as const,
+      alt: 'HLS Stream Test'
     }
   ];
 
@@ -332,9 +331,9 @@ const loadLocalMedia = async () => {
     // For local files, use file:// protocol
     const mediaItems = [
       {
-        url: 'file:///path/to/local/video.mp4',
-        type: 'video' as const,
-        title: 'Local Video'
+        path: 'file:///path/to/local/video.mp4',
+        type: 'VIDEO' as const,
+        alt: 'Local Video'
       }
     ];
 
@@ -415,19 +414,10 @@ Removes all listeners.
 #### `MediaItem`
 ```typescript
 interface MediaItem {
-  url: string;                    // Media URL (required)
-  type: 'video' | 'image';        // Media type (required)
-  title?: string;                 // Optional title
-  thumbnailUrl?: string;          // Optional thumbnail URL for videos
-  qualityVariants?: QualityVariant[]; // Optional quality variants for video
-}
-```
-
-#### `QualityVariant`
-```typescript
-interface QualityVariant {
-  label: string;  // Quality label (e.g., 'Auto', 'HD', 'SD', '720p', '1080p')
-  url: string;    // Video URL for this quality
+  path: string;                    // Media path (required)
+  type: 'IMAGE' | 'VIDEO';         // Media type (required)
+  alt?: string;                    // Optional alt text
+  thumbnail?: string;              // Optional thumbnail path for videos
 }
 ```
 
