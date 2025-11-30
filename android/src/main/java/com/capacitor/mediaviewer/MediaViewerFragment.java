@@ -15,10 +15,15 @@ import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
+import android.view.Window;
+import android.view.WindowInsetsController;
+import android.view.WindowManager;
 import android.widget.ArrayAdapter;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import androidx.appcompat.app.AlertDialog;
@@ -31,6 +36,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import com.bumptech.glide.Glide;
 import com.capacitor.mediaviewer.R;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Locale;
 
 public class MediaViewerFragment extends DialogFragment {
@@ -77,6 +83,11 @@ private TextureView textureView;
     private float swipeTotalDistance = 0;
     private int swipeDirection = 0; // -1 for left (next), 1 for right (previous)
     private ObjectAnimator currentSwipeAnimator;
+    private ViewTreeObserver.OnGlobalLayoutListener layoutListener;
+    private int lastContainerWidth = 0;
+    private int lastContainerHeight = 0;
+    private List<QualityVariant> qualityVariants = new ArrayList<>();
+    private String currentVideoUrl = null;
 
     public static MediaViewerFragment newInstance(
         List<MediaItem> items,
@@ -102,10 +113,52 @@ private TextureView textureView;
     @Override
     public void onStart() {
         super.onStart();
-        // Ensure the dialog takes full screen
-        if (getDialog() != null && getDialog().getWindow() != null) {
-            getDialog().getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        // Ensure the dialog takes full screen and hide navigation bar
+        hideSystemUI();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // Ensure full screen on resume (handles orientation changes) and hide navigation bar
+        hideSystemUI();
+    }
+
+    private void hideSystemUI() {
+        if (getDialog() == null || getDialog().getWindow() == null) {
+            return;
         }
+        
+        Window window = getDialog().getWindow();
+        
+        // Set full screen layout
+        window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        
+        // Hide navigation bar
+        View decorView = window.getDecorView();
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            // API 30+ (Android 11+)
+            WindowInsetsController controller = decorView.getWindowInsetsController();
+            if (controller != null) {
+                controller.hide(android.view.WindowInsets.Type.navigationBars());
+                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+        } else {
+            // API < 30
+            int uiOptions = View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
+            decorView.setSystemUiVisibility(uiOptions);
+        }
+        
+        // Set window flags to extend behind system bars
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        );
     }
 
     @Nullable
@@ -125,6 +178,26 @@ private TextureView textureView;
     private void initializeLayout(View rootView) {
         videoContainer = rootView.findViewById(R.id.video_container);
         mediaImageView = rootView.findViewById(R.id.media_image);
+        if (mediaImageView != null) {
+            // Set swipe listener so image view can trigger swipes when not zoomed
+            mediaImageView.setSwipeListener(new com.capacitor.mediaviewer.SwipeListener() {
+                @Override
+                public void onSwipeLeft() {
+                    // Swipe left - next (use existing swipe animation system)
+                    if (currentIndex < mediaItems.size() - 1 && !isSwiping) {
+                        startSwipeAnimation(-1, 0); // -1 = left (next)
+                    }
+                }
+
+                @Override
+                public void onSwipeRight() {
+                    // Swipe right - previous (use existing swipe animation system)
+                    if (currentIndex > 0 && !isSwiping) {
+                        startSwipeAnimation(1, 0); // 1 = right (previous)
+                    }
+                }
+            });
+        }
         videoThumbnail = rootView.findViewById(R.id.video_thumbnail);
         overlayContainer = rootView.findViewById(R.id.overlay_container);
         controlsContainer = rootView.findViewById(R.id.controls_container);
@@ -180,6 +253,9 @@ private TextureView textureView;
     private void initializeControlListeners() {
         if (qualityButton != null) {
             qualityButton.setOnClickListener(v -> showQualitySelector());
+            // Initially disable until we check if it's HLS
+            qualityButton.setEnabled(false);
+            qualityButton.setAlpha(0.5f);
         }
 
         if (playPauseButton != null) {
@@ -359,7 +435,7 @@ private TextureView textureView;
         }
         
         overlayContainer.setOnTouchListener((v, event) -> {
-            // If image is visible, check if we should handle swipe gestures
+            // If image is visible, we need to handle swipes even though image view consumes ACTION_DOWN
             if (mediaImageView != null && mediaImageView.getVisibility() == View.VISIBLE) {
                 // Only handle touches on close button or controls
                 if (closeButton != null && isPointInsideView(closeButton, event)) {
@@ -368,9 +444,9 @@ private TextureView textureView;
                 if (controlsContainer != null && isPointInsideView(controlsContainer, event)) {
                     return false; // Let controls handle it
                 }
-                // For images, let gesture detector handle swipes (it will work with image view)
-                // The image view will return false for horizontal swipes when not zoomed
-                return handleOverlayTouch(event);
+                // For images, we need to intercept touch events to handle swipes
+                // The image view consumes ACTION_DOWN, but we can still detect swipes on MOVE
+                return handleOverlayTouchForImage(event);
             }
             return handleOverlayTouch(event);
         });
@@ -386,6 +462,26 @@ private TextureView textureView;
         overlayContainer.setFocusable(!imageVisible);
     }
 
+    private boolean handleOverlayTouchForImage(MotionEvent event) {
+        // Special handling for images - detect horizontal swipes even if image view consumed ACTION_DOWN
+        if (gestureDetector != null) {
+            // Try to handle with gesture detector - it might work for fling gestures
+            boolean handled = gestureDetector.onTouchEvent(event);
+            if (handled) {
+                return true;
+            }
+        }
+        
+        // For MOVE events, check if it's a horizontal swipe
+        if (event.getAction() == MotionEvent.ACTION_MOVE && event.getPointerCount() == 1) {
+            // We can't easily detect swipe here since we don't have the start position
+            // But gesture detector's onScroll might work
+            return false;
+        }
+        
+        return false;
+    }
+    
     private boolean handleOverlayTouch(MotionEvent event) {
         // If touch is within controls or close button, let them handle it
         if (controlsContainer != null && controlsContainer.getVisibility() == View.VISIBLE &&
@@ -449,6 +545,51 @@ private TextureView textureView;
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
         // Gestures are handled by the gesture detector on the container
+        
+        // Add layout listener to handle orientation changes
+        setupLayoutListener();
+    }
+
+    private void setupLayoutListener() {
+        if (rootView == null) {
+            return;
+        }
+        
+        layoutListener = new ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override
+            public void onGlobalLayout() {
+                if (rootView == null) {
+                    return;
+                }
+                
+                int currentWidth = rootView.getWidth();
+                int currentHeight = rootView.getHeight();
+                
+                // Check if size actually changed
+                if (currentWidth != lastContainerWidth || currentHeight != lastContainerHeight) {
+                    lastContainerWidth = currentWidth;
+                    lastContainerHeight = currentHeight;
+                    
+                    // Update video aspect ratio if video is playing
+                    if (exoPlayer != null && textureView != null && textureView.getVisibility() == View.VISIBLE) {
+                        if (exoPlayer.getVideoSize().width > 0 && exoPlayer.getVideoSize().height > 0) {
+                            updateTextureViewAspectRatio(exoPlayer.getVideoSize().width, exoPlayer.getVideoSize().height);
+                        }
+                    }
+                    
+                    // Re-fit image if image is displayed
+                    if (mediaImageView != null && mediaImageView.getVisibility() == View.VISIBLE) {
+                        mediaImageView.post(() -> {
+                            if (mediaImageView.getDrawable() != null && mediaImageView.getWidth() > 0 && mediaImageView.getHeight() > 0) {
+                                mediaImageView.fitToScreenPublic();
+                            }
+                        });
+                    }
+                }
+            }
+        };
+        
+        rootView.getViewTreeObserver().addOnGlobalLayoutListener(layoutListener);
     }
 
     private void displayCurrentMedia() {
@@ -465,6 +606,29 @@ private TextureView textureView;
         if ("VIDEO".equals(item.type)) {
             currentQuality = "Auto";
             actualPlayingQuality = null;
+            currentVideoUrl = item.path;
+            
+            // Parse HLS playlist if it's an HLS video
+            if (HlsPlaylistParser.isHlsUrl(item.path)) {
+                // Parse quality variants on a background thread
+                new Thread(() -> {
+                    List<QualityVariant> variants = HlsPlaylistParser.parseMasterPlaylist(item.path);
+                    requireActivity().runOnUiThread(() -> {
+                        qualityVariants = variants;
+                        // Enable/disable quality button based on whether variants are available
+                        if (qualityButton != null) {
+                            qualityButton.setEnabled(variants.size() > 0);
+                            qualityButton.setAlpha(variants.size() > 0 ? 1.0f : 0.5f);
+                        }
+                    });
+                }).start();
+            } else {
+                qualityVariants.clear();
+                if (qualityButton != null) {
+                    qualityButton.setEnabled(false);
+                    qualityButton.setAlpha(0.5f);
+                }
+            }
         }
 
         if ("VIDEO".equals(item.type)) {
@@ -637,6 +801,10 @@ private TextureView textureView;
                     // Update video aspect ratio when ready
                     if (exoPlayer.getVideoSize().width > 0 && exoPlayer.getVideoSize().height > 0) {
                         updateTextureViewAspectRatio(exoPlayer.getVideoSize().width, exoPlayer.getVideoSize().height);
+                        // Update auto quality detection when video is ready
+                        if ("Auto".equals(currentQuality)) {
+                            updateAutoQuality();
+                        }
                     }
                     
                     // Fade in TextureView and hide thumbnail when video is ready and playing
@@ -689,8 +857,168 @@ private TextureView textureView;
     }
 
     private void showQualitySelector() {
-        // Quality selector removed - quality variants no longer supported
-        return;
+        if (qualityVariants == null || qualityVariants.isEmpty()) {
+            return;
+        }
+        
+        // Update auto quality detection before showing dialog
+        if ("Auto".equals(currentQuality)) {
+            updateAutoQuality();
+        }
+        
+        // Create quality options array
+        String[] qualityLabels = new String[qualityVariants.size() + 1];
+        // Format Auto label with current playing quality if available
+        if (actualPlayingQuality != null && "Auto".equals(currentQuality)) {
+            qualityLabels[0] = "Auto (" + actualPlayingQuality + ")";
+        } else {
+            qualityLabels[0] = "Auto";
+        }
+        for (int i = 0; i < qualityVariants.size(); i++) {
+            qualityLabels[i + 1] = qualityVariants.get(i).label;
+        }
+        
+        // Find which item is currently selected
+        int selectedIndex = 0; // Default to Auto
+        if (!"Auto".equals(currentQuality) && actualPlayingQuality != null) {
+            // Find the index of the currently selected quality
+            for (int i = 0; i < qualityVariants.size(); i++) {
+                if (qualityVariants.get(i).label.equals(currentQuality)) {
+                    selectedIndex = i + 1;
+                    break;
+                }
+            }
+        }
+        
+        // Create custom adapter with white text and highlight selected item
+        final int selectedPosition = selectedIndex;
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(requireContext(), android.R.layout.simple_list_item_1, qualityLabels) {
+            @NonNull
+            @Override
+            public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
+                View view = super.getView(position, convertView, parent);
+                TextView textView = (TextView) view.findViewById(android.R.id.text1);
+                if (textView != null) {
+                    textView.setTextColor(Color.WHITE);
+                    // Highlight selected item
+                    if (position == selectedPosition) {
+                        view.setBackgroundColor(Color.parseColor("#4D4D4D")); // Dark gray highlight
+                        textView.setTextColor(Color.parseColor("#FFD700")); // Gold color for selected
+                    } else {
+                        view.setBackgroundColor(Color.TRANSPARENT);
+                    }
+                }
+                return view;
+            }
+        };
+        
+        // Show dialog with quality options using Material theme
+        AlertDialog.Builder builder = new AlertDialog.Builder(requireContext(), androidx.appcompat.R.style.Theme_AppCompat_Dialog);
+        builder.setTitle("Select Quality");
+        builder.setAdapter(adapter, (dialog, which) -> {
+            if (which == 0) {
+                // Auto selected
+                currentQuality = "Auto";
+                actualPlayingQuality = null;
+                // Switch to original HLS URL for auto quality
+                if (currentVideoUrl != null && exoPlayer != null) {
+                    long currentPosition = exoPlayer.getCurrentPosition();
+                    boolean wasPlaying = exoPlayer.isPlaying();
+                    switchToQuality(currentVideoUrl, currentPosition, wasPlaying);
+                }
+            } else {
+                // Specific quality selected
+                QualityVariant selectedVariant = qualityVariants.get(which - 1);
+                currentQuality = selectedVariant.label;
+                actualPlayingQuality = selectedVariant.label;
+                // Switch to selected quality URL
+                if (exoPlayer != null) {
+                    long currentPosition = exoPlayer.getCurrentPosition();
+                    boolean wasPlaying = exoPlayer.isPlaying();
+                    switchToQuality(selectedVariant.url, currentPosition, wasPlaying);
+                }
+            }
+            dialog.dismiss();
+        });
+        AlertDialog dialog = builder.create();
+        dialog.show();
+        
+        // Set dialog background and text colors after showing
+        dialog.getWindow().setBackgroundDrawableResource(android.R.color.black);
+        ListView listView = dialog.getListView();
+        if (listView != null) {
+            listView.setBackgroundColor(Color.BLACK);
+        }
+        
+        // Set title text color
+        int titleId = requireContext().getResources().getIdentifier("alertTitle", "id", "android");
+        if (titleId == 0) {
+            titleId = requireContext().getResources().getIdentifier("title", "id", "android");
+        }
+        if (titleId != 0) {
+            TextView title = dialog.findViewById(titleId);
+            if (title != null) {
+                title.setTextColor(Color.WHITE);
+            }
+        }
+    }
+    
+    private void switchToQuality(String url, long positionMs, boolean playWhenReady) {
+        if (exoPlayer == null || textureView == null) {
+            return;
+        }
+        
+        // Stop playback first
+        exoPlayer.setPlayWhenReady(false);
+        
+        // Clear the video surface completely
+        exoPlayer.clearVideoSurface();
+        releaseVideoSurface();
+        
+        // Reset TextureView alpha to hide old frame
+        textureView.setAlpha(0f);
+        
+        // Reset TextureView to full screen size before switching
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) textureView.getLayoutParams();
+        params.width = FrameLayout.LayoutParams.MATCH_PARENT;
+        params.height = FrameLayout.LayoutParams.MATCH_PARENT;
+        textureView.setLayoutParams(params);
+        textureView.requestLayout();
+        
+        // Show thumbnail while switching (if available)
+        if (videoThumbnail != null && currentIndex >= 0 && currentIndex < mediaItems.size()) {
+            MediaItem item = mediaItems.get(currentIndex);
+            if (item.thumbnail != null && !item.thumbnail.isEmpty()) {
+                videoThumbnail.setVisibility(View.VISIBLE);
+            }
+        }
+        
+        // Create new media item with the selected quality URL
+        androidx.media3.common.MediaItem mediaItem = androidx.media3.common.MediaItem.fromUri(url);
+        
+        // Replace the media item (use replaceMediaItem if available, otherwise setMediaItem)
+        if (exoPlayer.getMediaItemCount() > 0) {
+            exoPlayer.replaceMediaItem(0, mediaItem);
+        } else {
+            exoPlayer.setMediaItem(mediaItem);
+        }
+        
+        // Recreate and attach the video surface
+        if (textureView.isAvailable()) {
+            Surface surface = new Surface(textureView.getSurfaceTexture());
+            videoSurface = surface;
+            exoPlayer.setVideoSurface(surface);
+        }
+        
+        exoPlayer.prepare();
+        
+        if (positionMs > 0) {
+            exoPlayer.seekTo(positionMs);
+        }
+        exoPlayer.setPlayWhenReady(playWhenReady);
+        
+        // The aspect ratio will be updated automatically when video is ready via the listener
+        // Fade in TextureView when video starts playing (handled by existing listener)
     }
     
     private void updateTextureViewAspectRatio(int videoWidth, int videoHeight) {
@@ -709,12 +1037,16 @@ private TextureView textureView;
         float videoAspectRatio = (float) videoWidth / videoHeight;
         float containerAspectRatio = (float) containerWidth / containerHeight;
 
+        // Use fitCenter behavior: fit to screen while maintaining aspect ratio
+        // This will show black bars if aspect ratios don't match, but won't crop
         int newWidth;
         int newHeight;
         if (videoAspectRatio > containerAspectRatio) {
+            // Video is wider - fit to width, black bars on top/bottom
             newWidth = containerWidth;
             newHeight = (int) (containerWidth / videoAspectRatio);
         } else {
+            // Video is taller - fit to height, black bars on left/right
             newHeight = containerHeight;
             newWidth = (int) (containerHeight * videoAspectRatio);
         }
@@ -728,7 +1060,15 @@ private TextureView textureView;
     }
 
     private void updateAutoQuality() {
-        // Quality detection removed - quality variants no longer supported
+        // Detect current playing quality from ExoPlayer when in Auto mode
+        if (exoPlayer != null && "Auto".equals(currentQuality)) {
+            // Try to detect quality from video size
+            if (exoPlayer.getVideoSize().height > 0) {
+                int height = exoPlayer.getVideoSize().height;
+                String detectedQuality = height + "p";
+                actualPlayingQuality = detectedQuality;
+            }
+        }
     }
 
     private void togglePlayPause() {
@@ -832,7 +1172,7 @@ private TextureView textureView;
         // Update overlay to allow touch events through
         updateOverlayClickable();
         
-        // Reset zoom when displaying new image
+        // Reset zoom when displaying new image (but don't fit yet - wait for image to load)
         mediaImageView.resetZoom();
 
         Glide.with(this)
@@ -845,13 +1185,13 @@ private TextureView textureView;
 
                 @Override
                 public boolean onResourceReady(android.graphics.drawable.Drawable resource, Object model, com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable> target, com.bumptech.glide.load.DataSource dataSource, boolean isFirstResource) {
-                    // Fit to screen after image is loaded
+                    // Fit to screen after image is loaded (only once to prevent flickering)
                     if (mediaImageView != null) {
-                        mediaImageView.post(() -> {
-                            if (mediaImageView.getDrawable() != null) {
+                        mediaImageView.postDelayed(() -> {
+                            if (mediaImageView.getDrawable() != null && mediaImageView.getWidth() > 0 && mediaImageView.getHeight() > 0) {
                                 mediaImageView.fitToScreenPublic();
                             }
-                        });
+                        }, 50); // Small delay to ensure layout is complete
                     }
                     return false;
                 }
@@ -1224,6 +1564,13 @@ private TextureView textureView;
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        
+        // Remove layout listener
+        if (rootView != null && layoutListener != null) {
+            rootView.getViewTreeObserver().removeOnGlobalLayoutListener(layoutListener);
+            layoutListener = null;
+        }
+        
         releasePlayer();
         overlayContainer = null;
         videoContainer = null;
@@ -1236,6 +1583,7 @@ private TextureView textureView;
         durationText = null;
         textureView = null;
         mediaImageView = null;
+        rootView = null;
         if (listener != null) {
             listener.onViewerDismissed();
         }

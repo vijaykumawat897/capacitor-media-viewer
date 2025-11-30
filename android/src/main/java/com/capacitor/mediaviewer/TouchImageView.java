@@ -10,6 +10,7 @@ import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.widget.ImageView;
 
+
 public class TouchImageView extends ImageView implements View.OnTouchListener {
     private static final float MIN_SCALE = 1.0f;
     private static final float MAX_SCALE = 4.0f;
@@ -29,10 +30,13 @@ public class TouchImageView extends ImageView implements View.OnTouchListener {
     private static final int NONE = 0;
     private static final int DRAG = 1;
     private static final int ZOOM = 2;
+    private static final int SWIPE = 3;
+    private boolean swipeTriggered = false;
 
     private ScaleGestureDetector mScaleDetector;
     private GestureDetector mGestureDetector;
     private boolean isInitialFit = true;
+    private SwipeListener swipeListener;
 
     public TouchImageView(Context context) {
         super(context);
@@ -60,21 +64,24 @@ public class TouchImageView extends ImageView implements View.OnTouchListener {
         mode = NONE;
         isInitialFit = true;
         matrix.reset();
-        // Post to ensure view is measured and drawable is loaded
-        post(() -> {
-            if (getDrawable() != null && viewWidth > 0 && viewHeight > 0) {
-                fitToScreen();
-                isInitialFit = false;
-            }
-        });
+        // Don't call fitToScreen here - wait for image to load
     }
     
     public void fitToScreenPublic() {
-        isInitialFit = true;
+        // Fit to screen - allow re-fitting on orientation changes
         if (getDrawable() != null && viewWidth > 0 && viewHeight > 0) {
+            // Reset scale to allow re-fitting
+            if (!isInitialFit) {
+                saveScale = 1.0f;
+                mode = NONE;
+            }
             fitToScreen();
             isInitialFit = false;
         }
+    }
+    
+    public void setSwipeListener(SwipeListener listener) {
+        this.swipeListener = listener;
     }
 
     @Override
@@ -91,10 +98,7 @@ public class TouchImageView extends ImageView implements View.OnTouchListener {
         if (changed) {
             viewWidth = right - left;
             viewHeight = bottom - top;
-            if (getDrawable() != null && isInitialFit && viewWidth > 0 && viewHeight > 0) {
-                fitToScreen();
-                isInitialFit = false;
-            }
+            // Don't auto-fit in onLayout - wait for explicit call after image loads to prevent flickering
         }
     }
 
@@ -112,6 +116,9 @@ public class TouchImageView extends ImageView implements View.OnTouchListener {
 
         float scaleX = (float) viewWidth / imageWidth;
         float scaleY = (float) viewHeight / imageHeight;
+        
+        // Use fitCenter behavior: fit to screen while maintaining aspect ratio
+        // This will show black bars if aspect ratios don't match, but won't crop
         float fitScale = Math.min(scaleX, scaleY);
         
         // For initial display, don't zoom in - only scale down if needed
@@ -157,13 +164,16 @@ public class TouchImageView extends ImageView implements View.OnTouchListener {
 
     @Override
     public boolean onTouch(View v, MotionEvent event) {
-        boolean handled = false;
         boolean isZoomed = saveScale > minScale + 0.01f; // Small threshold to account for floating point
         
-        // Always handle scale gesture first (pinch zoom) - needs to see all events
+        // Always let gesture detectors see events first (for double-tap and pinch)
+        // But don't consume the event yet - we'll decide based on what happens
+        
+        // Handle scale gesture (pinch zoom) - needs to see all events
+        boolean scaleHandled = false;
         if (mScaleDetector != null && event.getPointerCount() > 1) {
-            handled = mScaleDetector.onTouchEvent(event);
-            if (handled) {
+            scaleHandled = mScaleDetector.onTouchEvent(event);
+            if (scaleHandled) {
                 // Prevent parent from intercepting during pinch zoom
                 if (getParent() != null) {
                     getParent().requestDisallowInterceptTouchEvent(true);
@@ -173,9 +183,10 @@ public class TouchImageView extends ImageView implements View.OnTouchListener {
             }
         }
         
-        // Always handle double tap gesture - needs to see all events
+        // Handle double tap gesture - needs to see all events
+        boolean doubleTapHandled = false;
         if (mGestureDetector != null) {
-            boolean doubleTapHandled = mGestureDetector.onTouchEvent(event);
+            doubleTapHandled = mGestureDetector.onTouchEvent(event);
             if (doubleTapHandled) {
                 setImageMatrix(matrix);
                 return true;
@@ -188,6 +199,7 @@ public class TouchImageView extends ImageView implements View.OnTouchListener {
             case MotionEvent.ACTION_DOWN:
                 last.set(curr);
                 start.set(last);
+                swipeTriggered = false; // Reset swipe flag
                 if (mode != ZOOM) {
                     if (isZoomed) {
                         mode = DRAG;
@@ -195,15 +207,18 @@ public class TouchImageView extends ImageView implements View.OnTouchListener {
                         if (getParent() != null) {
                             getParent().requestDisallowInterceptTouchEvent(true);
                         }
+                        return true; // Consume when zoomed
                     } else {
                         mode = NONE;
-                        // Allow parent to intercept for swipes when not zoomed
+                        // When not zoomed, allow parent to intercept for swipes
                         if (getParent() != null) {
                             getParent().requestDisallowInterceptTouchEvent(false);
                         }
+                        // Return true to get events for gesture detectors (double-tap, pinch)
+                        // But we'll handle swipes ourselves via callback
+                        return true;
                     }
                 }
-                // Always return true to get events for gesture detectors, but allow parent to intercept on MOVE
                 return true;
 
             case MotionEvent.ACTION_POINTER_DOWN:
@@ -222,52 +237,54 @@ public class TouchImageView extends ImageView implements View.OnTouchListener {
                     last.set(curr.x, curr.y);
                     setImageMatrix(matrix);
                     return true;
-                } else if (!isZoomed && event.getPointerCount() == 1 && mode == NONE) {
+                } else if (!isZoomed && event.getPointerCount() == 1 && mode == NONE && !swipeTriggered) {
                     // Image is at minimum scale - check if it's a horizontal swipe
-                    float deltaX = Math.abs(curr.x - start.x);
+                    float deltaX = curr.x - start.x;
                     float deltaY = Math.abs(curr.y - start.y);
-                    // If it's primarily a horizontal movement, let parent handle it (swipe)
-                    if (deltaX > 30 && deltaX > deltaY * 1.5) {
-                        // Horizontal swipe detected - allow parent to intercept
-                        if (getParent() != null) {
-                            getParent().requestDisallowInterceptTouchEvent(false);
+                    float absDeltaX = Math.abs(deltaX);
+                    // If it's primarily a horizontal movement, trigger swipe
+                    if (absDeltaX > 50 && absDeltaX > deltaY * 1.5 && swipeListener != null) {
+                        // Horizontal swipe detected - trigger parent's swipe handling
+                        swipeTriggered = true;
+                        mode = SWIPE; // Mark as swipe to prevent further processing
+                        if (deltaX > 0) {
+                            // Swipe right - previous
+                            swipeListener.onSwipeRight();
+                        } else {
+                            // Swipe left - next
+                            swipeListener.onSwipeLeft();
                         }
-                        mode = NONE;
-                        // Don't consume - let parent handle the swipe
-                        return false;
+                        return true; // Consume the event
                     }
-                }
-                // For other cases, continue processing but don't consume if not zoomed
-                if (!isZoomed && mode == NONE) {
-                    return false; // Let parent handle
                 }
                 break;
 
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_POINTER_UP:
                 // Reset parent intercept flag
-                getParent().requestDisallowInterceptTouchEvent(false);
+                if (getParent() != null) {
+                    getParent().requestDisallowInterceptTouchEvent(false);
+                }
                 
                 if (mode == ZOOM) {
                     mode = NONE;
+                    swipeTriggered = false;
+                    return true;
                 } else if (mode == DRAG) {
                     mode = NONE;
+                    swipeTriggered = false;
                     if (isZoomed) {
                         return true;
                     }
+                } else if (mode == SWIPE) {
+                    mode = NONE;
+                    swipeTriggered = false;
+                    return true; // We handled the swipe
                 } else {
                     mode = NONE;
-                    // If image is not zoomed and it was a small movement, might be a tap
-                    if (!isZoomed) {
-                        int xDiff = (int) Math.abs(curr.x - start.x);
-                        int yDiff = (int) Math.abs(curr.y - start.y);
-                        if (xDiff < 10 && yDiff < 10) {
-                            performClick();
-                            return true;
-                        }
-                    }
+                    swipeTriggered = false;
                 }
-                break;
+                return false;
         }
 
         // Only consume if we're actually handling something (zoom or drag when zoomed)

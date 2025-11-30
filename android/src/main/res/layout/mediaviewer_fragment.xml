@@ -56,19 +56,23 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="bottom"
-            android:background="#E6000000"
+            android:background="#4D000000"
             android:clickable="true"
             android:elevation="10dp"
             android:focusable="true"
             android:orientation="vertical"
-            android:padding="20dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="20dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
             android:visibility="visible">
 
             <RelativeLayout
                 android:id="@+id/controls_top_row"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:paddingBottom="10dp">
+                android:background="@android:color/transparent"
+                android:paddingBottom="5dp">
 
                 <ImageView
                     android:id="@+id/quality_button"
@@ -79,7 +83,7 @@
                     android:clickable="true"
                     android:contentDescription="@string/media_viewer_select_quality"
                     android:focusable="true"
-                    android:padding="15dp"
+                    android:padding="5dp"
                     android:src="@android:drawable/ic_menu_more"
                     android:tint="@android:color/white" />
 
@@ -92,7 +96,7 @@
                     android:clickable="true"
                     android:contentDescription="@string/media_viewer_play_pause"
                     android:focusable="true"
-                    android:padding="20dp"
+                    android:padding="5dp"
                     android:src="@android:drawable/ic_media_pause"
                     android:tint="@android:color/white" />
             </RelativeLayout>
@@ -101,6 +105,7 @@
                 android:id="@+id/seekbar_container"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:background="@android:color/transparent"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
