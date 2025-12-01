@@ -583,15 +583,16 @@ public class MediaViewerFragment extends DialogFragment {
                     int currentWidth = rootView.getWidth();
                     int currentHeight = rootView.getHeight();
 
-                    // Check if size actually changed
+                    // Check if size actually changed (e.g. rotation)
                     if (currentWidth != lastContainerWidth || currentHeight != lastContainerHeight) {
                         lastContainerWidth = currentWidth;
                         lastContainerHeight = currentHeight;
 
-                        // Update video aspect ratio if video is playing
+                        // Recompute video layout on orientation/size change
                         if (exoPlayer != null && textureView != null && textureView.getVisibility() == View.VISIBLE) {
-                            if (exoPlayer.getVideoSize().width > 0 && exoPlayer.getVideoSize().height > 0) {
-                                updateTextureViewAspectRatio(exoPlayer.getVideoSize().width, exoPlayer.getVideoSize().height);
+                            androidx.media3.common.VideoSize vs = exoPlayer.getVideoSize();
+                            if (vs != null && vs.width > 0 && vs.height > 0) {
+                                updateTextureViewAspectRatio(vs.width, vs.height);
                             }
                         }
 
@@ -808,20 +809,9 @@ public class MediaViewerFragment extends DialogFragment {
                             updateDurationText(duration);
                         }
 
-                        // Update video aspect ratio when ready
+                        // Update video layout when ready (center with correct aspect ratio)
                         if (exoPlayer.getVideoSize().width > 0 && exoPlayer.getVideoSize().height > 0) {
-                            Log.d(
-                                "MediaViewerFragment",
-                                "onPlaybackStateChanged: STATE_READY: Video size changed to: " +
-                                exoPlayer.getVideoSize().width +
-                                "x" +
-                                exoPlayer.getVideoSize().height
-                            );
                             updateTextureViewAspectRatio(exoPlayer.getVideoSize().width, exoPlayer.getVideoSize().height);
-                            // Update auto quality detection when video is ready
-                            if ("Auto".equals(currentQuality)) {
-                                updateAutoQuality();
-                            }
                         }
 
                         // Fade in TextureView and hide thumbnail when video is ready and playing
@@ -887,15 +877,8 @@ public class MediaViewerFragment extends DialogFragment {
                     // Video size changed - this happens when quality changes
                     if (videoSize.width > 0 && videoSize.height > 0) {
                         Log.d("MediaViewerFragment", "Video size changed to: " + videoSize.width + "x" + videoSize.height);
-                        // Update TextureView aspect ratio to match new video size immediately
-                        // Use post to ensure we're on UI thread and layout is ready
-                        if (textureView != null) {
-                            textureView.post(() -> {
-                                if (textureView != null && exoPlayer != null) {
-                                    updateTextureViewAspectRatio(videoSize.width, videoSize.height);
-                                }
-                            });
-                        }
+                        // Update video layout when video size changes (e.g. quality change)
+                        updateTextureViewAspectRatio(videoSize.width, videoSize.height);
 
                         // Check quality if in Auto mode
                         if ("Auto".equals(currentQuality)) {
@@ -1006,6 +989,10 @@ public class MediaViewerFragment extends DialogFragment {
     }
 
 
+    /**
+     * Center the video and maintain its aspect ratio inside the container.
+     * No cropping, no stretching: classic "fit center" behavior with black bars if needed.
+     */
     private void updateTextureViewAspectRatio(int videoWidth, int videoHeight) {
         if (videoWidth <= 0 || videoHeight <= 0 || textureView == null || videoContainer == null) {
             return;
@@ -1020,57 +1007,57 @@ public class MediaViewerFragment extends DialogFragment {
             }
         } catch (Exception ignored) {}
 
-        // If nothing changed, avoid relayout thrash
-        if (videoWidth == lastVideoWidth && videoHeight == lastVideoHeight && Math.abs(pixelAspectRatio - lastPixelRatio) < 0.0001f) {
-            return;
-        }
-        lastVideoWidth = videoWidth;
-        lastVideoHeight = videoHeight;
-        lastPixelRatio = pixelAspectRatio;
+        final float effectiveVideoWidth = videoWidth * pixelAspectRatio;
+        final float effectiveVideoHeight = videoHeight;
 
-        final float videoAspect = (videoWidth * pixelAspectRatio) / (float) videoHeight;
-
-        // Post onto UI thread to make sure container is measured
         textureView.post(() -> {
-            int containerW = videoContainer.getWidth();
-            int containerH = videoContainer.getHeight();
+            if (videoContainer == null || textureView == null) {
+                return;
+            }
 
-            if (containerW == 0 || containerH == 0) {
-                // container not laid out yet; try again shortly
+            int viewWidth = videoContainer.getWidth();
+            int viewHeight = videoContainer.getHeight();
+            if (viewWidth == 0 || viewHeight == 0) {
+                // Try again shortly if layout not ready
                 textureView.postDelayed(() -> updateTextureViewAspectRatio(videoWidth, videoHeight), 50);
                 return;
             }
 
-            float containerAspect = containerW / (float) containerH;
+            double aspectRatio = effectiveVideoHeight / effectiveVideoWidth;
 
-            int newW, newH;
-            if (containerAspect > videoAspect) {
-                // container is wider => match height
-                newH = containerH;
-                newW = Math.round(containerH * videoAspect);
+            int newWidth;
+            int newHeight;
+            if (viewHeight > (int) (viewWidth * aspectRatio)) {
+                // Limited by width; restrict height
+                newWidth = viewWidth;
+                newHeight = (int) (viewWidth * aspectRatio);
             } else {
-                // container is taller => match width
-                newW = containerW;
-                newH = Math.round(containerW / videoAspect);
+                // Limited by height; restrict width
+                newHeight = viewHeight;
+                newWidth = (int) (viewHeight / aspectRatio);
             }
 
-            // Apply new layout params (wrap_content in xml/code allows this)
+            int xOffset = (viewWidth - newWidth) / 2;
+            int yOffset = (viewHeight - newHeight) / 2;
+
+            // TextureView itself stays MATCH_PARENT; we use a matrix to letterbox correctly
             FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) textureView.getLayoutParams();
-            lp.width = newW;
-            lp.height = newH;
+            lp.width = FrameLayout.LayoutParams.MATCH_PARENT;
+            lp.height = FrameLayout.LayoutParams.MATCH_PARENT;
             lp.gravity = android.view.Gravity.CENTER;
             textureView.setLayoutParams(lp);
 
-            // Reset any translation/positioning - let gravity handle centering
             textureView.setX(0f);
             textureView.setY(0f);
-
-            // Reset any scaling transforms to avoid distortion
             textureView.setScaleX(1f);
             textureView.setScaleY(1f);
-            
-            // Ensure transform matrix is identity (no scaling/translation)
+
             android.graphics.Matrix matrix = new android.graphics.Matrix();
+            float scaleX = (float) newWidth / viewWidth;
+            float scaleY = (float) newHeight / viewHeight;
+            matrix.setScale(scaleX, scaleY);
+            matrix.postTranslate(xOffset, yOffset);
+
             textureView.setTransform(matrix);
         });
     }
