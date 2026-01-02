@@ -78,6 +78,8 @@ public class MediaViewerFragment extends DialogFragment {
     private ImageView backButton;
     private ImageView settingsButton;
     private ImageView playPauseButton;
+    private ImageView loadingSpinner;
+    private ObjectAnimator spinnerAnimation;
     private ImageView prevButton;
     private ImageView nextButton;
     private ImageView volumeButton;
@@ -249,6 +251,7 @@ public class MediaViewerFragment extends DialogFragment {
         backButton = rootView.findViewById(R.id.back_button);
         settingsButton = rootView.findViewById(R.id.settings_button);
         playPauseButton = rootView.findViewById(R.id.play_pause_button);
+        loadingSpinner = rootView.findViewById(R.id.loading_spinner);
         prevButton = rootView.findViewById(R.id.prev_button);
         nextButton = rootView.findViewById(R.id.next_button);
         volumeButton = rootView.findViewById(R.id.volume_button);
@@ -908,14 +911,23 @@ public class MediaViewerFragment extends DialogFragment {
                         // Playback has ended
                         playbackEnded = true;
                         updatePlayPauseButton(false);
+                        showLoadingSpinner(false);
                         showControls(); // Show controls when playback ends
                         // Update current quality being played if in auto mode
                         updateAutoQuality();
+                    } else if (playbackState == Player.STATE_BUFFERING) {
+                        // Video is buffering - show loading spinner
+                        Log.d("MediaViewerFragment", "onPlaybackStateChanged: STATE_BUFFERING");
+                        playbackEnded = false;
+                        showLoadingSpinner(true);
                     } else if (playbackState == Player.STATE_READY) {
                         // Reset error retry count on successful playback
                         errorRetryCount = 0;
                         Log.d("MediaViewerFragment", "onPlaybackStateChanged: STATE_READY");
                         playbackEnded = false;
+                        // Hide loading spinner when ready and update play/pause button
+                        showLoadingSpinner(false);
+                        updatePlayPauseButton(exoPlayer.isPlaying());
                         long duration = exoPlayer.getDuration();
                         if (duration > 0) {
                             seekBar.setMax(1000); // Use 1000 for percentage-based seeking
@@ -1699,6 +1711,44 @@ public class MediaViewerFragment extends DialogFragment {
         }
     }
 
+    private void showLoadingSpinner(boolean show) {
+        if (loadingSpinner != null && playPauseButton != null) {
+            if (show) {
+                // Show loading spinner, hide play button
+                loadingSpinner.setVisibility(View.VISIBLE);
+                playPauseButton.setVisibility(View.GONE);
+                // Start rotation animation
+                startSpinnerAnimation();
+            } else {
+                // Hide loading spinner, show play button
+                loadingSpinner.setVisibility(View.GONE);
+                playPauseButton.setVisibility(View.VISIBLE);
+                // Stop rotation animation
+                stopSpinnerAnimation();
+            }
+        }
+    }
+
+    private void startSpinnerAnimation() {
+        if (loadingSpinner != null && spinnerAnimation == null) {
+            spinnerAnimation = ObjectAnimator.ofFloat(loadingSpinner, "rotation", 0f, 360f);
+            spinnerAnimation.setDuration(1000); // 1 second per rotation
+            spinnerAnimation.setRepeatCount(ObjectAnimator.INFINITE);
+            spinnerAnimation.setInterpolator(new android.view.animation.LinearInterpolator());
+            spinnerAnimation.start();
+        }
+    }
+
+    private void stopSpinnerAnimation() {
+        if (spinnerAnimation != null) {
+            spinnerAnimation.cancel();
+            spinnerAnimation = null;
+            if (loadingSpinner != null) {
+                loadingSpinner.setRotation(0f);
+            }
+        }
+    }
+
     private void toggleControls() {
         if (controlsVisible) {
             hideControls();
@@ -2384,6 +2434,9 @@ public class MediaViewerFragment extends DialogFragment {
 
         releasePlayer();
         
+        // Stop spinner animation
+        stopSpinnerAnimation();
+        
         // Release wake lock
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
@@ -2397,6 +2450,7 @@ public class MediaViewerFragment extends DialogFragment {
         backButton = null;
         settingsButton = null;
         playPauseButton = null;
+        loadingSpinner = null;
         prevButton = null;
         nextButton = null;
         volumeButton = null;

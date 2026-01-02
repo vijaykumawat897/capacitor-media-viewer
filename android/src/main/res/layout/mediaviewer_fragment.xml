@@ -91,17 +91,32 @@
                 android:src="@drawable/ic_prev"
                 android:tint="@android:color/white" />
 
-            <ImageView
-                android:id="@+id/play_pause_button"
+            <FrameLayout
                 android:layout_width="80dp"
                 android:layout_height="80dp"
-                android:background="@android:color/transparent"
-                android:clickable="true"
-                android:contentDescription="@string/media_viewer_play_pause"
-                android:focusable="true"
-                android:padding="20dp"
-                android:src="@drawable/ic_play"
-                android:tint="@android:color/white" />
+                android:background="@android:color/transparent">
+                
+                <ImageView
+                    android:id="@+id/play_pause_button"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@android:color/transparent"
+                    android:clickable="true"
+                    android:contentDescription="@string/media_viewer_play_pause"
+                    android:focusable="true"
+                    android:padding="20dp"
+                    android:src="@drawable/ic_play"
+                    android:tint="@android:color/white" />
+                
+                <ImageView
+                    android:id="@+id/loading_spinner"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_gravity="center"
+                    android:background="@android:color/transparent"
+                    android:src="@drawable/ic_loading_spinner"
+                    android:visibility="gone" />
+            </FrameLayout>
 
             <ImageView
                 android:id="@+id/next_button"
