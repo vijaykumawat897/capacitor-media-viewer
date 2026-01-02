@@ -36,27 +36,94 @@
         android:clipToPadding="false"
         android:focusable="true">
 
+        <!-- Top Controls -->
         <ImageView
-            android:id="@+id/close_button"
+            android:id="@+id/back_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|start"
+            android:layout_margin="20dp"
+            android:background="@android:color/transparent"
+            android:clickable="true"
+            android:contentDescription="@string/media_viewer_back"
+            android:focusable="true"
+            android:padding="15dp"
+            android:src="@drawable/ic_back"
+            android:tint="@android:color/white"
+            android:elevation="20dp" />
+
+        <ImageView
+            android:id="@+id/settings_button"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="top|end"
             android:layout_margin="20dp"
-            android:background="#80000000"
+            android:background="@android:color/transparent"
             android:clickable="true"
-            android:contentDescription="@string/media_viewer_close"
+            android:contentDescription="@string/media_viewer_settings"
             android:focusable="true"
             android:padding="15dp"
-            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:src="@drawable/ic_settings"
             android:tint="@android:color/white"
             android:elevation="20dp" />
 
+        <!-- Center Controls: Play/Pause with Next/Previous -->
+        <LinearLayout
+            android:id="@+id/center_controls"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@android:color/transparent"
+            android:elevation="15dp">
+
+            <ImageView
+                android:id="@+id/prev_button"
+                android:layout_width="60dp"
+                android:layout_height="60dp"
+                android:layout_marginEnd="30dp"
+                android:background="@android:color/transparent"
+                android:clickable="true"
+                android:contentDescription="@string/media_viewer_previous"
+                android:focusable="true"
+                android:padding="15dp"
+                android:src="@drawable/ic_prev"
+                android:tint="@android:color/white" />
+
+            <ImageView
+                android:id="@+id/play_pause_button"
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:background="@android:color/transparent"
+                android:clickable="true"
+                android:contentDescription="@string/media_viewer_play_pause"
+                android:focusable="true"
+                android:padding="20dp"
+                android:src="@drawable/ic_play"
+                android:tint="@android:color/white" />
+
+            <ImageView
+                android:id="@+id/next_button"
+                android:layout_width="60dp"
+                android:layout_height="60dp"
+                android:layout_marginStart="30dp"
+                android:background="@android:color/transparent"
+                android:clickable="true"
+                android:contentDescription="@string/media_viewer_next"
+                android:focusable="true"
+                android:padding="15dp"
+                android:src="@drawable/ic_next"
+                android:tint="@android:color/white" />
+        </LinearLayout>
+
+        <!-- Bottom Controls -->
         <LinearLayout
             android:id="@+id/controls_container"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_gravity="bottom"
-            android:background="#4D000000"
+            android:background="#80000000"
             android:clickable="true"
             android:elevation="10dp"
             android:focusable="true"
@@ -67,47 +134,15 @@
             android:paddingEnd="20dp"
             android:visibility="visible">
 
-            <RelativeLayout
-                android:id="@+id/controls_top_row"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="@android:color/transparent"
-                android:paddingBottom="5dp">
-
-                <ImageView
-                    android:id="@+id/quality_button"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_alignParentEnd="true"
-                    android:background="#80000000"
-                    android:clickable="true"
-                    android:contentDescription="@string/media_viewer_select_quality"
-                    android:focusable="true"
-                    android:padding="5dp"
-                    android:src="@android:drawable/ic_menu_more"
-                    android:tint="@android:color/white" />
-
-                <ImageView
-                    android:id="@+id/play_pause_button"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_centerHorizontal="true"
-                    android:background="@android:color/transparent"
-                    android:clickable="true"
-                    android:contentDescription="@string/media_viewer_play_pause"
-                    android:focusable="true"
-                    android:padding="5dp"
-                    android:src="@android:drawable/ic_media_pause"
-                    android:tint="@android:color/white" />
-            </RelativeLayout>
-
+            <!-- Seek Bar Row -->
             <LinearLayout
                 android:id="@+id/seekbar_container"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:background="@android:color/transparent"
                 android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:orientation="horizontal"
+                android:layout_marginBottom="10dp">
 
                 <TextView
                     android:id="@+id/current_time_text"
@@ -135,6 +170,44 @@
                     android:text="0:00"
                     android:textColor="@android:color/white"
                     android:textSize="12sp" />
+            </LinearLayout>
+
+            <!-- Bottom Row: Volume and Fullscreen -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:background="@android:color/transparent"
+                android:gravity="center_vertical">
+
+                <ImageView
+                    android:id="@+id/volume_button"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@android:color/transparent"
+                    android:clickable="true"
+                    android:contentDescription="@string/media_viewer_volume"
+                    android:focusable="true"
+                    android:padding="10dp"
+                    android:src="@drawable/ic_volume"
+                    android:tint="@android:color/white" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <ImageView
+                    android:id="@+id/fullscreen_button"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@android:color/transparent"
+                    android:clickable="true"
+                    android:contentDescription="@string/media_viewer_fullscreen"
+                    android:focusable="true"
+                    android:padding="10dp"
+                    android:src="@drawable/ic_fullscreen"
+                    android:tint="@android:color/white" />
             </LinearLayout>
         </LinearLayout>
     </FrameLayout>

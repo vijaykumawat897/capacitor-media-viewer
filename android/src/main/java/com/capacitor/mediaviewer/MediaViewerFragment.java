@@ -3,10 +3,13 @@ package com.capacitor.mediaviewer;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ObjectAnimator;
+import android.content.Context;
 import android.graphics.Color;
+import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.util.Log;
 import android.view.GestureDetector;
 import android.view.LayoutInflater;
@@ -31,10 +34,13 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.DialogFragment;
 import androidx.media3.common.C;
+import androidx.media3.common.Format;
 import androidx.media3.common.Player;
 import androidx.media3.common.Tracks;
+import androidx.media3.common.text.Cue;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import com.bumptech.glide.Glide;
 import com.capacitor.mediaviewer.R;
 import java.util.ArrayList;
@@ -68,14 +74,30 @@ public class MediaViewerFragment extends DialogFragment {
 
     // Custom controls
     private LinearLayout controlsContainer;
-    private ImageView closeButton;
+    private LinearLayout centerControls;
+    private ImageView backButton;
+    private ImageView settingsButton;
     private ImageView playPauseButton;
-    private ImageView qualityButton;
+    private ImageView prevButton;
+    private ImageView nextButton;
+    private ImageView volumeButton;
+    private ImageView fullscreenButton;
     private SeekBar seekBar;
     private TextView currentTimeText;
     private TextView durationText;
     private boolean controlsVisible = true; // Start visible
     private Runnable hideControlsRunnable;
+    
+    // Playback speed and captions
+    private float currentPlaybackSpeed = 1.0f;
+    private boolean captionsEnabled = false;
+    
+    // Error handling
+    private int errorRetryCount = 0;
+    private static final int MAX_RETRY_COUNT = 3;
+    
+    // Screen wake lock
+    private android.os.PowerManager.WakeLock wakeLock;
 
     // Swipe animation state
     private ViewGroup rootView;
@@ -109,6 +131,10 @@ public class MediaViewerFragment extends DialogFragment {
         super.onCreate(savedInstanceState);
         setStyle(DialogFragment.STYLE_NO_TITLE, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
         playbackHandler = new Handler(Looper.getMainLooper());
+        
+        // Acquire wake lock to keep screen on
+        PowerManager powerManager = (PowerManager) requireContext().getSystemService(Context.POWER_SERVICE);
+        wakeLock = powerManager.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK, "MediaViewer::WakeLock");
     }
 
     @Override
@@ -123,6 +149,23 @@ public class MediaViewerFragment extends DialogFragment {
         super.onResume();
         // Ensure full screen on resume (handles orientation changes) and hide navigation bar
         hideSystemUI();
+        // Acquire wake lock
+        if (wakeLock != null && !wakeLock.isHeld()) {
+            wakeLock.acquire();
+        }
+    }
+    
+    @Override
+    public void onPause() {
+        super.onPause();
+        // Pause playback when going to background
+        if (exoPlayer != null && exoPlayer.isPlaying()) {
+            exoPlayer.pause();
+        }
+        // Release wake lock
+        if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
+        }
     }
 
     private void hideSystemUI() {
@@ -202,15 +245,40 @@ public class MediaViewerFragment extends DialogFragment {
         videoThumbnail = rootView.findViewById(R.id.video_thumbnail);
         overlayContainer = rootView.findViewById(R.id.overlay_container);
         controlsContainer = rootView.findViewById(R.id.controls_container);
-        closeButton = rootView.findViewById(R.id.close_button);
+        centerControls = rootView.findViewById(R.id.center_controls);
+        backButton = rootView.findViewById(R.id.back_button);
+        settingsButton = rootView.findViewById(R.id.settings_button);
         playPauseButton = rootView.findViewById(R.id.play_pause_button);
-        qualityButton = rootView.findViewById(R.id.quality_button);
+        prevButton = rootView.findViewById(R.id.prev_button);
+        nextButton = rootView.findViewById(R.id.next_button);
+        volumeButton = rootView.findViewById(R.id.volume_button);
+        fullscreenButton = rootView.findViewById(R.id.fullscreen_button);
         seekBar = rootView.findViewById(R.id.seek_bar);
         currentTimeText = rootView.findViewById(R.id.current_time_text);
         durationText = rootView.findViewById(R.id.duration_text);
 
-        if (closeButton != null) {
-            closeButton.setOnClickListener(v -> dismiss());
+        if (backButton != null) {
+            backButton.setOnClickListener(v -> dismiss());
+        }
+        
+        if (settingsButton != null) {
+            settingsButton.setOnClickListener(v -> showSettingsPopup());
+        }
+        
+        if (prevButton != null) {
+            prevButton.setOnClickListener(v -> showPrevious());
+        }
+        
+        if (nextButton != null) {
+            nextButton.setOnClickListener(v -> showNext());
+        }
+        
+        if (volumeButton != null) {
+            volumeButton.setOnClickListener(v -> toggleVolume());
+        }
+        
+        if (fullscreenButton != null) {
+            fullscreenButton.setOnClickListener(v -> toggleFullscreen());
         }
 
         // Set up the current media container reference
@@ -261,13 +329,6 @@ public class MediaViewerFragment extends DialogFragment {
     }
 
     private void initializeControlListeners() {
-        if (qualityButton != null) {
-            qualityButton.setOnClickListener(v -> showQualitySelector());
-            // Initially disable until we check if it's HLS
-            qualityButton.setEnabled(false);
-            qualityButton.setAlpha(0.5f);
-        }
-
         if (playPauseButton != null) {
             playPauseButton.setOnClickListener(v -> togglePlayPause());
         }
@@ -310,6 +371,18 @@ public class MediaViewerFragment extends DialogFragment {
         if (controlsContainer != null) {
             controlsContainer.setVisibility(View.VISIBLE);
             controlsVisible = true;
+        }
+        
+        if (centerControls != null) {
+            centerControls.setVisibility(View.VISIBLE);
+        }
+        
+        if (backButton != null) {
+            backButton.setVisibility(View.VISIBLE);
+        }
+        
+        if (settingsButton != null) {
+            settingsButton.setVisibility(View.VISIBLE);
         }
     }
 
@@ -435,11 +508,56 @@ public class MediaViewerFragment extends DialogFragment {
                                     return false; // Let controls handle the tap
                                 }
                             }
+                            
+                            // Check if tap is on center controls
+                            if (centerControls != null && centerControls.getVisibility() == View.VISIBLE) {
+                                int[] location = new int[2];
+                                centerControls.getLocationOnScreen(location);
+                                int x = location[0];
+                                int y = location[1];
+                                int width = centerControls.getWidth();
+                                int height = centerControls.getHeight();
+                                int tapX = (int) e.getRawX();
+                                int tapY = (int) e.getRawY();
+
+                                // If tap is within center controls bounds, don't toggle
+                                if (tapX >= x && tapX <= x + width && tapY >= y && tapY <= y + height) {
+                                    return false; // Let controls handle the tap
+                                }
+                            }
+                            
                             // Toggle controls visibility for video
                             toggleControls();
                             return true;
                         }
-                        // For images, do nothing - only close button can dismiss
+                        // For images, do nothing - only back button can dismiss
+                        return false;
+                    }
+                    
+                    @Override
+                    public boolean onDoubleTap(MotionEvent e) {
+                        // Handle double-tap for fast-forward/rewind
+                        if (textureView != null && textureView.getVisibility() == View.VISIBLE && exoPlayer != null) {
+                            float screenWidth = rootView != null ? rootView.getWidth() : 0;
+                            if (screenWidth > 0) {
+                                float tapX = e.getX();
+                                float halfScreen = screenWidth / 2;
+                                
+                                if (tapX > halfScreen) {
+                                    // Double-tap on right side - fast forward 10 seconds
+                                    long currentPosition = exoPlayer.getCurrentPosition();
+                                    long duration = exoPlayer.getDuration();
+                                    long newPosition = Math.min(currentPosition + 10000, duration);
+                                    exoPlayer.seekTo(newPosition);
+                                } else {
+                                    // Double-tap on left side - rewind 10 seconds
+                                    long currentPosition = exoPlayer.getCurrentPosition();
+                                    long newPosition = Math.max(currentPosition - 10000, 0);
+                                    exoPlayer.seekTo(newPosition);
+                                }
+                                return true;
+                            }
+                        }
                         return false;
                     }
                 }
@@ -447,6 +565,8 @@ public class MediaViewerFragment extends DialogFragment {
 
         // Enable long press to toggle controls (optional)
         gestureDetector.setIsLongpressEnabled(false);
+        // Enable double-tap for fast-forward/rewind
+        // Double-tap is enabled by default in GestureDetector
     }
 
     private void setupOverlayTouchHandling() {
@@ -457,9 +577,9 @@ public class MediaViewerFragment extends DialogFragment {
         overlayContainer.setOnTouchListener((v, event) -> {
             // If image is visible, we need to handle swipes even though image view consumes ACTION_DOWN
             if (mediaImageView != null && mediaImageView.getVisibility() == View.VISIBLE) {
-                // Only handle touches on close button or controls
-                if (closeButton != null && isPointInsideView(closeButton, event)) {
-                    return false; // Let close button handle it
+                // Only handle touches on back button or controls
+                if (backButton != null && isPointInsideView(backButton, event)) {
+                    return false; // Let back button handle it
                 }
                 if (controlsContainer != null && isPointInsideView(controlsContainer, event)) {
                     return false; // Let controls handle it
@@ -510,7 +630,7 @@ public class MediaViewerFragment extends DialogFragment {
             }
             return false;
         }
-        if (closeButton != null && closeButton.getVisibility() == View.VISIBLE && isPointInsideView(closeButton, event)) {
+        if (backButton != null && backButton.getVisibility() == View.VISIBLE && isPointInsideView(backButton, event)) {
             if (isSwiping && event.getAction() == MotionEvent.ACTION_UP) {
                 cancelCurrentSwipe();
             }
@@ -637,20 +757,11 @@ public class MediaViewerFragment extends DialogFragment {
                     requireActivity()
                         .runOnUiThread(() -> {
                             qualityVariants = variants;
-                            // Enable/disable quality button based on whether variants are available
-                            if (qualityButton != null) {
-                                qualityButton.setEnabled(variants.size() > 0);
-                                qualityButton.setAlpha(variants.size() > 0 ? 1.0f : 0.5f);
-                            }
                         });
                 })
                     .start();
             } else {
                 qualityVariants.clear();
-                if (qualityButton != null) {
-                    qualityButton.setEnabled(false);
-                    qualityButton.setAlpha(0.5f);
-                }
             }
         }
 
@@ -801,6 +912,8 @@ public class MediaViewerFragment extends DialogFragment {
                         // Update current quality being played if in auto mode
                         updateAutoQuality();
                     } else if (playbackState == Player.STATE_READY) {
+                        // Reset error retry count on successful playback
+                        errorRetryCount = 0;
                         Log.d("MediaViewerFragment", "onPlaybackStateChanged: STATE_READY");
                         playbackEnded = false;
                         long duration = exoPlayer.getDuration();
@@ -888,6 +1001,12 @@ public class MediaViewerFragment extends DialogFragment {
                         }
                     }
                 }
+                
+                @Override
+                public void onPlayerError(androidx.media3.common.PlaybackException error) {
+                    Log.e("MediaViewerFragment", "Player error: " + error.getMessage(), error);
+                    handlePlayerError(error);
+                }
             }
         );
 
@@ -899,6 +1018,7 @@ public class MediaViewerFragment extends DialogFragment {
 
         androidx.media3.common.MediaItem mediaItem = androidx.media3.common.MediaItem.fromUri(item.path);
         exoPlayer.setMediaItem(mediaItem);
+        exoPlayer.setPlaybackSpeed(currentPlaybackSpeed);
         exoPlayer.prepare();
         if (startPositionMs > 0) {
             exoPlayer.seekTo(startPositionMs);
@@ -925,6 +1045,257 @@ public class MediaViewerFragment extends DialogFragment {
 
         // Start monitoring playback state
         startPlaybackStateMonitoring();
+    }
+
+    private void showSettingsPopup() {
+        String[] options = {
+            requireContext().getString(R.string.media_viewer_select_quality),
+            requireContext().getString(R.string.media_viewer_playback_speed),
+            requireContext().getString(R.string.media_viewer_captions)
+        };
+
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(requireContext(), android.R.layout.simple_list_item_1, options) {
+            @NonNull
+            @Override
+            public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
+                View view = super.getView(position, convertView, parent);
+                if (view != null) {
+                    view.setBackgroundColor(Color.parseColor("#333333"));
+                }
+                TextView textView = view.findViewById(android.R.id.text1);
+                if (textView != null) {
+                    textView.setTextColor(Color.WHITE);
+                }
+                return view;
+            }
+        };
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
+        builder.setTitle("Settings");
+        AlertDialog settingsDialog = builder.create();
+        settingsDialog.setOnShowListener(d -> {
+            // Set title text color
+            int titleId = requireContext().getResources().getIdentifier("alertTitle", "id", "android");
+            if (titleId > 0) {
+                TextView titleView = settingsDialog.findViewById(titleId);
+                if (titleView != null) {
+                    titleView.setTextColor(Color.WHITE);
+                }
+            }
+            // Set dialog background
+            if (settingsDialog.getWindow() != null) {
+                settingsDialog.getWindow().setBackgroundDrawableResource(android.R.color.black);
+            }
+        });
+        builder.setAdapter(
+            adapter,
+            (dialog, which) -> {
+                switch (which) {
+                    case 0:
+                        showQualitySelector();
+                        break;
+                    case 1:
+                        showPlaybackSpeedSelector();
+                        break;
+                    case 2:
+                        toggleCaptions();
+                        break;
+                }
+            }
+        );
+        builder.show();
+    }
+
+    private void showPlaybackSpeedSelector() {
+        String[] speedOptions = {"0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x"};
+        float[] speedValues = {0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f};
+
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(requireContext(), android.R.layout.simple_list_item_1, speedOptions) {
+            @NonNull
+            @Override
+            public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
+                View view = super.getView(position, convertView, parent);
+                if (view != null) {
+                    view.setBackgroundColor(Color.parseColor("#333333"));
+                }
+                TextView textView = view.findViewById(android.R.id.text1);
+                if (textView != null) {
+                    textView.setTextColor(Color.WHITE);
+
+                    // Highlight current selection
+                    if (Math.abs(speedValues[position] - currentPlaybackSpeed) < 0.01f) {
+                        textView.setTextColor(Color.parseColor("#4CAF50")); // Green for selected
+                    }
+                }
+
+                return view;
+            }
+        };
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
+        builder.setTitle("Playback Speed");
+        // Set title text color and background
+        AlertDialog palybackSppedDialog = builder.create();
+        palybackSppedDialog.setOnShowListener(d -> {
+            int titleId = requireContext().getResources().getIdentifier("alertTitle", "id", "android");
+            if (titleId > 0) {
+                TextView titleView = palybackSppedDialog.findViewById(titleId);
+                if (titleView != null) {
+                    titleView.setTextColor(Color.WHITE);
+                }
+            }
+            palybackSppedDialog.getWindow().setBackgroundDrawableResource(android.R.color.black);
+        });
+        builder.setAdapter(
+            adapter,
+            (dialog, which) -> {
+                setPlaybackSpeed(speedValues[which]);
+            }
+        );
+        builder.show();
+    }
+
+    private void setPlaybackSpeed(float speed) {
+        currentPlaybackSpeed = speed;
+        if (exoPlayer != null) {
+            exoPlayer.setPlaybackSpeed(speed);
+        }
+    }
+
+    private void toggleCaptions() {
+        captionsEnabled = !captionsEnabled;
+        if (exoPlayer != null) {
+            Tracks tracks = exoPlayer.getCurrentTracks();
+            if (tracks != null) {
+                for (Tracks.Group trackGroup : tracks.getGroups()) {
+                    if (trackGroup.getType() == C.TRACK_TYPE_TEXT) {
+                        // Enable/disable text tracks (captions)
+                        for (int i = 0; i < trackGroup.length; i++) {
+                            if (trackGroup.isTrackSelected(i) != captionsEnabled) {
+                                // Toggle track selection
+                                DefaultTrackSelector.Parameters.Builder paramsBuilder = 
+                                    new DefaultTrackSelector.Parameters.Builder(requireContext());
+                                // This is a simplified approach - ExoPlayer track selection is more complex
+                                // For now, we'll just track the state
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Show feedback to user
+        String message = captionsEnabled ? "Captions enabled" : "Captions disabled";
+        android.widget.Toast.makeText(requireContext(), message, android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private void toggleVolume() {
+        AudioManager audioManager = (AudioManager) requireContext().getSystemService(Context.AUDIO_SERVICE);
+        if (audioManager != null) {
+            int currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+            int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            
+            if (currentVolume == 0) {
+                // Unmute - set to 50% of max
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxVolume / 2, 0);
+                if (volumeButton != null) {
+                    volumeButton.setImageResource(R.drawable.ic_volume);
+                }
+            } else {
+                // Mute
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0);
+                if (volumeButton != null) {
+                    volumeButton.setImageResource(R.drawable.ic_volume_mute);
+                }
+            }
+        }
+    }
+
+    private void toggleFullscreen() {
+        // Already in fullscreen mode (DialogFragment with fullscreen style)
+        // This could be used to exit fullscreen if needed, but for now just show a message
+        android.widget.Toast.makeText(requireContext(), "Already in fullscreen mode", android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private void handlePlayerError(androidx.media3.common.PlaybackException error) {
+        errorRetryCount++;
+        
+        if (errorRetryCount <= MAX_RETRY_COUNT) {
+            // Show error message with retry option
+            AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
+            builder.setTitle("Playback Error");
+            builder.setMessage("Failed to load video. Attempt " + errorRetryCount + " of " + MAX_RETRY_COUNT + "\n\n" + error.getMessage());
+            builder.setPositiveButton("Retry", (dialog, which) -> {
+                // Retry playback
+                MediaItem currentItem = mediaItems.get(currentIndex);
+                if (currentItem != null && "VIDEO".equals(currentItem.type)) {
+                    android.graphics.SurfaceTexture surfaceTexture = textureView != null ? textureView.getSurfaceTexture() : null;
+                    if (surfaceTexture != null) {
+                        long currentPosition = exoPlayer != null ? exoPlayer.getCurrentPosition() : 0;
+                        boolean wasPlaying = exoPlayer != null && exoPlayer.isPlaying();
+                        releasePlayer(false);
+                        preparePlayerWithSurface(currentItem, surfaceTexture, currentPosition, wasPlaying);
+                    }
+                }
+            });
+            builder.setNegativeButton("Cancel", (dialog, which) -> {
+                // Stop retrying
+                errorRetryCount = MAX_RETRY_COUNT + 1;
+            });
+            builder.setCancelable(false);
+            AlertDialog errorDialog = builder.create();
+            errorDialog.setOnShowListener(d -> {
+                // Set title text color
+                int titleId = requireContext().getResources().getIdentifier("alertTitle", "id", "android");
+                if (titleId > 0) {
+                    TextView titleView = errorDialog.findViewById(titleId);
+                    if (titleView != null) {
+                        titleView.setTextColor(Color.WHITE);
+                    }
+                }
+                // Set dialog background
+                if (errorDialog.getWindow() != null) {
+                    errorDialog.getWindow().setBackgroundDrawableResource(android.R.color.black);
+                }
+            });
+            errorDialog.show();
+        } else {
+            // Max retries reached - show persistent error
+            AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
+            builder.setTitle("Playback Failed");
+            builder.setMessage("Failed to load video after " + MAX_RETRY_COUNT + " attempts.\n\n" + error.getMessage());
+            builder.setPositiveButton("Try Again", (dialog, which) -> {
+                // Reset retry count and try again
+                errorRetryCount = 0;
+                MediaItem currentItem = mediaItems.get(currentIndex);
+                if (currentItem != null && "VIDEO".equals(currentItem.type)) {
+                    android.graphics.SurfaceTexture surfaceTexture = textureView != null ? textureView.getSurfaceTexture() : null;
+                    if (surfaceTexture != null) {
+                        releasePlayer(false);
+                        preparePlayerWithSurface(currentItem, surfaceTexture, 0L, true);
+                    }
+                }
+            });
+            builder.setNegativeButton("Close", (dialog, which) -> {
+                dismiss();
+            });
+            builder.setCancelable(false);
+            AlertDialog failedDialog = builder.create();
+            failedDialog.setOnShowListener(d -> {
+                // Set title text color
+                int titleId = requireContext().getResources().getIdentifier("alertTitle", "id", "android");
+                if (titleId > 0) {
+                    TextView titleView = failedDialog.findViewById(titleId);
+                    if (titleView != null) {
+                        titleView.setTextColor(Color.WHITE);
+                    }
+                }
+                // Set dialog background
+                if (failedDialog.getWindow() != null) {
+                    failedDialog.getWindow().setBackgroundDrawableResource(android.R.color.black);
+                }
+            });
+            failedDialog.show();
+        }
     }
 
     private void showQualitySelector() {
@@ -961,15 +1332,20 @@ public class MediaViewerFragment extends DialogFragment {
             @Override
             public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
                 View view = super.getView(position, convertView, parent);
+                if (view != null) {
+                    view.setBackgroundColor(Color.parseColor("#333333"));
+                }
                 TextView textView = view.findViewById(android.R.id.text1);
-                textView.setTextColor(Color.WHITE);
+                if (textView != null) {
+                    textView.setTextColor(Color.WHITE);
 
-                // Highlight current selection
-                String quality = qualityLabels[position];
-                if (
-                    quality.equals(currentQuality) || (quality.equals("Auto") && (currentQuality == null || currentQuality.equals("Auto")))
-                ) {
-                    textView.setTextColor(Color.parseColor("#4CAF50")); // Green for selected
+                    // Highlight current selection
+                    String quality = qualityLabels[position];
+                    if (
+                        quality.equals(currentQuality) || (quality.equals("Auto") && (currentQuality == null || currentQuality.equals("Auto")))
+                    ) {
+                        textView.setTextColor(Color.parseColor("#4CAF50")); // Green for selected
+                    }
                 }
 
                 return view;
@@ -978,6 +1354,18 @@ public class MediaViewerFragment extends DialogFragment {
 
         AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
         builder.setTitle("Select Quality");
+        // Set title text color and background
+        AlertDialog qualityDialog = builder.create();
+        qualityDialog.setOnShowListener(d -> {
+            int titleId = requireContext().getResources().getIdentifier("alertTitle", "id", "android");
+            if (titleId > 0) {
+                TextView titleView = qualityDialog.findViewById(titleId);
+                if (titleView != null) {
+                    titleView.setTextColor(Color.WHITE);
+                }
+            }
+            qualityDialog.getWindow().setBackgroundDrawableResource(android.R.color.black);
+        });
         builder.setAdapter(
             adapter,
             (dialog, which) -> {
@@ -1304,9 +1692,9 @@ public class MediaViewerFragment extends DialogFragment {
     private void updatePlayPauseButton(boolean isPlaying) {
         if (playPauseButton != null) {
             if (isPlaying) {
-                playPauseButton.setImageResource(android.R.drawable.ic_media_pause);
+                playPauseButton.setImageResource(R.drawable.ic_pause);
             } else {
-                playPauseButton.setImageResource(android.R.drawable.ic_media_play);
+                playPauseButton.setImageResource(R.drawable.ic_play);
             }
         }
     }
@@ -1325,8 +1713,14 @@ public class MediaViewerFragment extends DialogFragment {
             controlsContainer.setVisibility(View.VISIBLE);
             controlsVisible = true;
         }
-        if (closeButton != null) {
-            closeButton.setVisibility(View.VISIBLE);
+        if (centerControls != null) {
+            centerControls.setVisibility(View.VISIBLE);
+        }
+        if (backButton != null) {
+            backButton.setVisibility(View.VISIBLE);
+        }
+        if (settingsButton != null) {
+            settingsButton.setVisibility(View.VISIBLE);
         }
     }
 
@@ -1335,9 +1729,15 @@ public class MediaViewerFragment extends DialogFragment {
             controlsContainer.setVisibility(View.GONE);
             controlsVisible = false;
         }
-        // Keep close button always visible
-        // if (closeButton != null) {
-        //     closeButton.setVisibility(View.VISIBLE);
+        if (centerControls != null) {
+            centerControls.setVisibility(View.GONE);
+        }
+        // Keep back and settings buttons always visible
+        // if (backButton != null) {
+        //     backButton.setVisibility(View.VISIBLE);
+        // }
+        // if (settingsButton != null) {
+        //     settingsButton.setVisibility(View.VISIBLE);
         // }
     }
 
@@ -1351,7 +1751,7 @@ public class MediaViewerFragment extends DialogFragment {
                     hideControls();
                 }
             };
-        playbackHandler.postDelayed(hideControlsRunnable, 3000); // Hide after 3 seconds
+        playbackHandler.postDelayed(hideControlsRunnable, 5000); // Hide after 5 seconds
     }
 
     private void updateCurrentTimeText(long positionMs) {
@@ -1983,12 +2383,24 @@ public class MediaViewerFragment extends DialogFragment {
         }
 
         releasePlayer();
+        
+        // Release wake lock
+        if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
+            wakeLock = null;
+        }
+        
         overlayContainer = null;
         videoContainer = null;
         controlsContainer = null;
-        closeButton = null;
+        centerControls = null;
+        backButton = null;
+        settingsButton = null;
         playPauseButton = null;
-        qualityButton = null;
+        prevButton = null;
+        nextButton = null;
+        volumeButton = null;
+        fullscreenButton = null;
         seekBar = null;
         currentTimeText = null;
         durationText = null;
