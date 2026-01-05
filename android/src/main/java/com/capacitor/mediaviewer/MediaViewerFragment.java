@@ -5,6 +5,7 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.ObjectAnimator;
 import android.content.Context;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.Handler;
@@ -12,6 +13,7 @@ import android.os.Looper;
 import android.os.PowerManager;
 import android.util.Log;
 import android.view.GestureDetector;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.Surface;
@@ -22,6 +24,8 @@ import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.view.animation.Animation;
+import android.view.animation.AnimationUtils;
 import android.widget.ArrayAdapter;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -1059,63 +1063,89 @@ public class MediaViewerFragment extends DialogFragment {
         startPlaybackStateMonitoring();
     }
 
+    private void styleAllTextViews(View view, int textColor) {
+        if (view instanceof TextView) {
+            ((TextView) view).setTextColor(textColor);
+        } else if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                styleAllTextViews(group.getChildAt(i), textColor);
+            }
+        }
+    }
+
+    private void findAndStyleDialogPanel(View view, int backgroundColor) {
+        if (view == null) return;
+        
+        // Check if this is a container view (FrameLayout, LinearLayout, etc.) that's not a ListView
+        if (view instanceof FrameLayout || view instanceof LinearLayout) {
+            if (!(view instanceof ListView)) {
+                view.setBackgroundColor(backgroundColor);
+            }
+        }
+        
+        // Recursively check children
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                findAndStyleDialogPanel(group.getChildAt(i), backgroundColor);
+            }
+        }
+    }
+
     private void showSettingsPopup() {
-        String[] options = {
-            requireContext().getString(R.string.media_viewer_select_quality),
-            requireContext().getString(R.string.media_viewer_playback_speed),
-            requireContext().getString(R.string.media_viewer_captions)
-        };
+        // Inflate custom layout
+        LayoutInflater inflater = LayoutInflater.from(requireContext());
+        View dialogView = inflater.inflate(R.layout.dialog_settings, null);
 
-        ArrayAdapter<String> adapter = new ArrayAdapter<String>(requireContext(), android.R.layout.simple_list_item_1, options) {
-            @NonNull
-            @Override
-            public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
-                View view = super.getView(position, convertView, parent);
-                if (view != null) {
-                    view.setBackgroundColor(Color.parseColor("#333333"));
-                }
-                TextView textView = view.findViewById(android.R.id.text1);
-                if (textView != null) {
-                    textView.setTextColor(Color.WHITE);
-                }
-                return view;
-            }
-        };
+        // Get individual item views from custom layout
+        LinearLayout itemQuality = dialogView.findViewById(R.id.item_quality);
+        LinearLayout itemSpeed = dialogView.findViewById(R.id.item_speed);
+        LinearLayout itemCaptions = dialogView.findViewById(R.id.item_captions);
 
+        // Create and show dialog with custom view
         AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
-        builder.setTitle("Settings");
+        builder.setView(dialogView);
         AlertDialog settingsDialog = builder.create();
-        settingsDialog.setOnShowListener(d -> {
-            // Set title text color
-            int titleId = requireContext().getResources().getIdentifier("alertTitle", "id", "android");
-            if (titleId > 0) {
-                TextView titleView = settingsDialog.findViewById(titleId);
-                if (titleView != null) {
-                    titleView.setTextColor(Color.WHITE);
-                }
-            }
-            // Set dialog background
-            if (settingsDialog.getWindow() != null) {
-                settingsDialog.getWindow().setBackgroundDrawableResource(android.R.color.black);
-            }
+        
+        // Configure window to appear at bottom with slide-up animation
+        Window window = settingsDialog.getWindow();
+        if (window != null) {
+            // Set transparent background so rounded corners show properly
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            
+            // Set window layout params to position at bottom with margin
+            WindowManager.LayoutParams params = window.getAttributes();
+            params.gravity = Gravity.BOTTOM;
+            params.width = WindowManager.LayoutParams.MATCH_PARENT;
+            params.horizontalMargin = 0;
+            params.verticalMargin = 0;
+            // Add bottom margin for floating effect (in pixels, 16dp)
+            int bottomMargin = (int) (16 * requireContext().getResources().getDisplayMetrics().density);
+            params.y = bottomMargin;
+            window.setAttributes(params);
+            
+            // Set window animation
+            window.setWindowAnimations(R.style.DialogBottomAnimation);
+        }
+        
+        // Set click listeners for each item
+        itemQuality.setOnClickListener(v -> {
+            settingsDialog.dismiss();
+            showQualitySelector();
         });
-        builder.setAdapter(
-            adapter,
-            (dialog, which) -> {
-                switch (which) {
-                    case 0:
-                        showQualitySelector();
-                        break;
-                    case 1:
-                        showPlaybackSpeedSelector();
-                        break;
-                    case 2:
-                        toggleCaptions();
-                        break;
-                }
-            }
-        );
-        builder.show();
+        
+        itemSpeed.setOnClickListener(v -> {
+            settingsDialog.dismiss();
+            showPlaybackSpeedSelector();
+        });
+        
+        itemCaptions.setOnClickListener(v -> {
+            settingsDialog.dismiss();
+            toggleCaptions();
+        });
+        
+        settingsDialog.show();
     }
 
     private void showPlaybackSpeedSelector() {
