@@ -1152,17 +1152,31 @@ public class MediaViewerFragment extends DialogFragment {
         String[] speedOptions = {"0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x"};
         float[] speedValues = {0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f};
 
+        // Inflate custom layout
+        LayoutInflater inflater = LayoutInflater.from(requireContext());
+        View dialogView = inflater.inflate(R.layout.dialog_speed, null);
+
+        // Get ListView from custom layout
+        ListView listView = dialogView.findViewById(R.id.speed_list);
+
         ArrayAdapter<String> adapter = new ArrayAdapter<String>(requireContext(), android.R.layout.simple_list_item_1, speedOptions) {
             @NonNull
             @Override
             public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
                 View view = super.getView(position, convertView, parent);
                 if (view != null) {
-                    view.setBackgroundColor(Color.parseColor("#333333"));
+                    view.setBackgroundResource(R.drawable.dialog_item_selector);
+                    view.setPadding(
+                        (int) (10 * requireContext().getResources().getDisplayMetrics().density),
+                        (int) (10 * requireContext().getResources().getDisplayMetrics().density),
+                        (int) (10 * requireContext().getResources().getDisplayMetrics().density),
+                        (int) (10 * requireContext().getResources().getDisplayMetrics().density)
+                    );
                 }
                 TextView textView = view.findViewById(android.R.id.text1);
                 if (textView != null) {
                     textView.setTextColor(Color.WHITE);
+                    textView.setBackgroundColor(Color.TRANSPARENT);
 
                     // Highlight current selection
                     if (Math.abs(speedValues[position] - currentPlaybackSpeed) < 0.01f) {
@@ -1174,27 +1188,41 @@ public class MediaViewerFragment extends DialogFragment {
             }
         };
 
+        listView.setAdapter(adapter);
+
+        // Create and show dialog with custom view
         AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
-        builder.setTitle("Playback Speed");
-        // Set title text color and background
-        AlertDialog palybackSppedDialog = builder.create();
-        palybackSppedDialog.setOnShowListener(d -> {
-            int titleId = requireContext().getResources().getIdentifier("alertTitle", "id", "android");
-            if (titleId > 0) {
-                TextView titleView = palybackSppedDialog.findViewById(titleId);
-                if (titleView != null) {
-                    titleView.setTextColor(Color.WHITE);
-                }
-            }
-            palybackSppedDialog.getWindow().setBackgroundDrawableResource(android.R.color.black);
+        builder.setView(dialogView);
+        AlertDialog speedDialog = builder.create();
+        
+        // Configure window to appear at bottom with slide-up animation
+        Window window = speedDialog.getWindow();
+        if (window != null) {
+            // Set transparent background so rounded corners show properly
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            
+            // Set window layout params to position at bottom with margin
+            WindowManager.LayoutParams params = window.getAttributes();
+            params.gravity = Gravity.BOTTOM;
+            params.width = WindowManager.LayoutParams.MATCH_PARENT;
+            params.horizontalMargin = 0;
+            params.verticalMargin = 0;
+            // Add bottom margin for floating effect (in pixels, 16dp)
+            int bottomMargin = (int) (16 * requireContext().getResources().getDisplayMetrics().density);
+            params.y = bottomMargin;
+            window.setAttributes(params);
+            
+            // Set window animation
+            window.setWindowAnimations(R.style.DialogBottomAnimation);
+        }
+        
+        // Set click listener
+        listView.setOnItemClickListener((parent, view, position, id) -> {
+            speedDialog.dismiss();
+            setPlaybackSpeed(speedValues[position]);
         });
-        builder.setAdapter(
-            adapter,
-            (dialog, which) -> {
-                setPlaybackSpeed(speedValues[which]);
-            }
-        );
-        builder.show();
+        
+        speedDialog.show();
     }
 
     private void setPlaybackSpeed(float speed) {
@@ -1369,17 +1397,31 @@ public class MediaViewerFragment extends DialogFragment {
             displayLabels[i + 1] = qualityLabels[i + 1];
         }
 
+        // Inflate custom layout
+        LayoutInflater inflater = LayoutInflater.from(requireContext());
+        View dialogView = inflater.inflate(R.layout.dialog_quality, null);
+
+        // Get ListView from custom layout
+        ListView listView = dialogView.findViewById(R.id.quality_list);
+
         ArrayAdapter<String> adapter = new ArrayAdapter<String>(requireContext(), android.R.layout.simple_list_item_1, displayLabels) {
             @NonNull
             @Override
             public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
                 View view = super.getView(position, convertView, parent);
                 if (view != null) {
-                    view.setBackgroundColor(Color.parseColor("#333333"));
+                    view.setBackgroundResource(R.drawable.dialog_item_selector);
+                    view.setPadding(
+                        (int) (10 * requireContext().getResources().getDisplayMetrics().density),
+                        (int) (10 * requireContext().getResources().getDisplayMetrics().density),
+                        (int) (10 * requireContext().getResources().getDisplayMetrics().density),
+                        (int) (10 * requireContext().getResources().getDisplayMetrics().density)
+                    );
                 }
                 TextView textView = view.findViewById(android.R.id.text1);
                 if (textView != null) {
                     textView.setTextColor(Color.WHITE);
+                    textView.setBackgroundColor(Color.TRANSPARENT);
 
                     // Highlight current selection
                     String quality = qualityLabels[position];
@@ -1394,28 +1436,42 @@ public class MediaViewerFragment extends DialogFragment {
             }
         };
 
+        listView.setAdapter(adapter);
+
+        // Create and show dialog with custom view
         AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
-        builder.setTitle("Select Quality");
-        // Set title text color and background
+        builder.setView(dialogView);
         AlertDialog qualityDialog = builder.create();
-        qualityDialog.setOnShowListener(d -> {
-            int titleId = requireContext().getResources().getIdentifier("alertTitle", "id", "android");
-            if (titleId > 0) {
-                TextView titleView = qualityDialog.findViewById(titleId);
-                if (titleView != null) {
-                    titleView.setTextColor(Color.WHITE);
-                }
-            }
-            qualityDialog.getWindow().setBackgroundDrawableResource(android.R.color.black);
+        
+        // Configure window to appear at bottom with slide-up animation
+        Window window = qualityDialog.getWindow();
+        if (window != null) {
+            // Set transparent background so rounded corners show properly
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            
+            // Set window layout params to position at bottom with margin
+            WindowManager.LayoutParams params = window.getAttributes();
+            params.gravity = Gravity.BOTTOM;
+            params.width = WindowManager.LayoutParams.MATCH_PARENT;
+            params.horizontalMargin = 0;
+            params.verticalMargin = 0;
+            // Add bottom margin for floating effect (in pixels, 16dp)
+            int bottomMargin = (int) (16 * requireContext().getResources().getDisplayMetrics().density);
+            params.y = bottomMargin;
+            window.setAttributes(params);
+            
+            // Set window animation
+            window.setWindowAnimations(R.style.DialogBottomAnimation);
+        }
+        
+        // Set click listener
+        listView.setOnItemClickListener((parent, view, position, id) -> {
+            qualityDialog.dismiss();
+            String selectedQuality = qualityLabels[position];
+            setQuality(selectedQuality);
         });
-        builder.setAdapter(
-            adapter,
-            (dialog, which) -> {
-                String selectedQuality = qualityLabels[which];
-                setQuality(selectedQuality);
-            }
-        );
-        builder.show();
+        
+        qualityDialog.show();
     }
 
 
