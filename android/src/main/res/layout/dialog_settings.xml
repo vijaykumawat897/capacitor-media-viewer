@@ -36,13 +36,20 @@
             android:textColor="@android:color/white"
             android:text="@string/media_viewer_select_quality" />
 
+        <TextView
+            android:id="@+id/item_quality_value"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:background="@android:color/transparent"
+            android:textColor="#AAAAAA" />
+
         <ImageView
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
             android:src="@drawable/ic_caret_right"
             android:background="@android:color/transparent"
-            android:contentDescription="Open"
-            android:layout_marginStart="8dp" />
+            android:contentDescription="Open" />
 
     </LinearLayout>
 
@@ -75,13 +82,20 @@
             android:textColor="@android:color/white"
             android:text="@string/media_viewer_playback_speed" />
 
+        <TextView
+            android:id="@+id/item_speed_value"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:background="@android:color/transparent"
+            android:textColor="#AAAAAA" />
+
         <ImageView
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
             android:src="@drawable/ic_caret_right"
             android:background="@android:color/transparent"
-            android:contentDescription="Open"
-            android:layout_marginStart="8dp" />
+            android:contentDescription="Open" />
 
     </LinearLayout>
 

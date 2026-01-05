@@ -1102,6 +1102,44 @@ public class MediaViewerFragment extends DialogFragment {
         LinearLayout itemQuality = dialogView.findViewById(R.id.item_quality);
         LinearLayout itemSpeed = dialogView.findViewById(R.id.item_speed);
         LinearLayout itemCaptions = dialogView.findViewById(R.id.item_captions);
+        
+        // Get TextViews for displaying current values
+        TextView qualityValue = dialogView.findViewById(R.id.item_quality_value);
+        TextView speedValue = dialogView.findViewById(R.id.item_speed_value);
+        
+        // Set current quality value
+        if (qualityValue != null) {
+            String qualityDisplay;
+            if (currentQuality == null || "Auto".equals(currentQuality)) {
+                // Show "Auto (1080p)" format if actual quality is available
+                if (actualPlayingQuality != null && !actualPlayingQuality.isEmpty()) {
+                    qualityDisplay = "Auto (" + actualPlayingQuality + ")";
+                } else {
+                    qualityDisplay = "Auto";
+                }
+            } else {
+                qualityDisplay = currentQuality;
+            }
+            qualityValue.setText(qualityDisplay);
+        }
+        
+        // Set current speed value
+        if (speedValue != null) {
+            String speedDisplay;
+            if (currentPlaybackSpeed == (int) currentPlaybackSpeed) {
+                // Whole number, show as "1x", "2x", etc.
+                speedDisplay = String.format(Locale.US, "%dx", (int) currentPlaybackSpeed);
+            } else {
+                // Decimal, show as "0.5x", "1.5x", etc.
+                speedDisplay = String.format(Locale.US, "%.2fx", currentPlaybackSpeed);
+                // Remove trailing zeros
+                speedDisplay = speedDisplay.replaceAll("0+$", "").replaceAll("\\.$", "");
+                if (!speedDisplay.endsWith("x")) {
+                    speedDisplay += "x";
+                }
+            }
+            speedValue.setText(speedDisplay);
+        }
 
         // Create and show dialog with custom view
         AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
