@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="media_viewer_close">Close viewer</string>
-    <string name="media_viewer_select_quality">Select quality</string>
+    <string name="media_viewer_back">Back</string>
+    <string name="media_viewer_settings">Settings</string>
+    <string name="media_viewer_select_quality">Quality</string>
     <string name="media_viewer_play_pause">Play or pause</string>
+    <string name="media_viewer_previous">Previous</string>
+    <string name="media_viewer_next">Next</string>
+    <string name="media_viewer_volume">Volume</string>
+    <string name="media_viewer_fullscreen">Fullscreen</string>
+    <string name="media_viewer_playback_speed">Playback Speed</string>
+    <string name="media_viewer_captions">Captions</string>
 </resources>
 

@@ -5,5 +5,7 @@ class MediaItem {
     var type: String = "" // "IMAGE" or "VIDEO"
     var alt: String?
     var thumbnail: String?
+    // Internal use only - quality variants are auto-detected
+    var qualityVariants: [QualityVariant] = []
 }
 
