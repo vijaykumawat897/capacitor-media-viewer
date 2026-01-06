@@ -20,6 +20,8 @@ class HlsPlaylistParser {
                 var currentResolution: String?
                 var currentBandwidth: String?
                 var currentVariantUrl: String?
+                var currentWidth = 0
+                var currentHeight = 0
                 
                 // Patterns for parsing HLS playlist
                 let resolutionPattern = try NSRegularExpression(pattern: "RESOLUTION=(\\d+)x(\\d+)", options: [])
@@ -29,12 +31,21 @@ class HlsPlaylistParser {
                     let trimmedLine = line.trimmingCharacters(in: .whitespaces)
                     
                     if trimmedLine.hasPrefix("#EXT-X-STREAM-INF:") {
+                        currentWidth = 0
+                        currentHeight = 0
+                        currentResolution = nil
+                        
                         // Extract resolution
                         let resolutionRange = NSRange(location: 0, length: trimmedLine.utf16.count)
-                        if let resolutionMatch = resolutionPattern.firstMatch(in: trimmedLine, options: [], range: resolutionRange),
-                           let heightRange = Range(resolutionMatch.range(at: 2), in: trimmedLine),
-                           let height = Int(trimmedLine[heightRange]) {
-                            currentResolution = "\(height)p"
+                        if let resolutionMatch = resolutionPattern.firstMatch(in: trimmedLine, options: [], range: resolutionRange) {
+                            if let widthRange = Range(resolutionMatch.range(at: 1), in: trimmedLine),
+                               let width = Int(trimmedLine[widthRange]),
+                               let heightRange = Range(resolutionMatch.range(at: 2), in: trimmedLine),
+                               let height = Int(trimmedLine[heightRange]) {
+                                currentWidth = width
+                                currentHeight = height
+                                currentResolution = "\(height)p"
+                            }
                         }
                         
                         // Extract bandwidth if no resolution
@@ -65,12 +76,16 @@ class HlsPlaylistParser {
                             let variant = QualityVariant()
                             variant.label = resolution
                             variant.url = variantUrl
+                            variant.width = currentWidth
+                            variant.height = currentHeight
                             variants.append(variant)
                             
                             // Reset for next variant
                             currentResolution = nil
                             currentBandwidth = nil
                             currentVariantUrl = nil
+                            currentWidth = 0
+                            currentHeight = 0
                         }
                     }
                 }
