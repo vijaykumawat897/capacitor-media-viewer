@@ -960,7 +960,9 @@ public class MediaViewerFragment extends DialogFragment {
                         }
 
                         // Update current quality being played if in auto mode
-                        updateAutoQuality();
+                        // Use a delay to ensure track information is available
+                        playbackHandler.postDelayed(() -> updateAutoQuality(), 500);
+                        playbackHandler.postDelayed(() -> updateAutoQuality(), 1500);
                     } else {
                         playbackEnded = false;
                     }
@@ -1107,20 +1109,9 @@ public class MediaViewerFragment extends DialogFragment {
         TextView qualityValue = dialogView.findViewById(R.id.item_quality_value);
         TextView speedValue = dialogView.findViewById(R.id.item_speed_value);
         
-        // Set current quality value
+        // Hide quality label for now
         if (qualityValue != null) {
-            String qualityDisplay;
-            if (currentQuality == null || "Auto".equals(currentQuality)) {
-                // Show "Auto (1080p)" format if actual quality is available
-                if (actualPlayingQuality != null && !actualPlayingQuality.isEmpty()) {
-                    qualityDisplay = "Auto (" + actualPlayingQuality + ")";
-                } else {
-                    qualityDisplay = "Auto";
-                }
-            } else {
-                qualityDisplay = currentQuality;
-            }
-            qualityValue.setText(qualityDisplay);
+            qualityValue.setVisibility(View.GONE);
         }
         
         // Set current speed value
@@ -1420,17 +1411,9 @@ public class MediaViewerFragment extends DialogFragment {
             qualityLabels[i + 1] = currentItem.qualityVariants.get(i).label;
         }
 
-        // Build display labels (show actual quality next to Auto if available)
+        // Build display labels
         String[] displayLabels = new String[qualityLabels.length];
-        if (currentQuality == null || "Auto".equals(currentQuality)) {
-            if (actualPlayingQuality != null && !actualPlayingQuality.isEmpty()) {
-                displayLabels[0] = "Auto (" + actualPlayingQuality + ")";
-            } else {
-                displayLabels[0] = "Auto";
-            }
-        } else {
-            displayLabels[0] = "Auto";
-        }
+        displayLabels[0] = "Auto";
         for (int i = 0; i < currentItem.qualityVariants.size(); i++) {
             displayLabels[i + 1] = qualityLabels[i + 1];
         }
@@ -1600,8 +1583,10 @@ public class MediaViewerFragment extends DialogFragment {
 
             Tracks tracks = exoPlayer.getCurrentTracks();
             if (tracks != null && tracks.getGroups().size() > 0) {
+                // Check all video track groups to find the selected one
                 for (Tracks.Group trackGroup : tracks.getGroups()) {
                     if (trackGroup.getType() == C.TRACK_TYPE_VIDEO && trackGroup.length > 0) {
+                        // Check all tracks in the group to find which one is selected
                         for (int i = 0; i < trackGroup.length; i++) {
                             if (trackGroup.isTrackSelected(i)) {
                                 androidx.media3.common.Format format = trackGroup.getTrackFormat(i);
@@ -1619,6 +1604,8 @@ public class MediaViewerFragment extends DialogFragment {
                                         selectedTrackId +
                                         ", bitrate: " +
                                         format.bitrate +
+                                        ", codecs: " +
+                                        format.codecs +
                                         ")"
                                     );
                                     break;
@@ -1633,9 +1620,11 @@ public class MediaViewerFragment extends DialogFragment {
             }
 
             // Fallback to ExoPlayer's video size if track info not available
+            // This is important for adaptive streaming where track selection might not be immediately available
             if (width == 0 || height == 0) {
-                width = exoPlayer.getVideoSize().width;
-                height = exoPlayer.getVideoSize().height;
+                androidx.media3.common.VideoSize videoSize = exoPlayer.getVideoSize();
+                width = videoSize.width;
+                height = videoSize.height;
                 if (width > 0 && height > 0) {
                     Log.d("MediaViewerFragment", "Using video size fallback: " + width + "x" + height);
                 }
@@ -1733,39 +1722,57 @@ public class MediaViewerFragment extends DialogFragment {
         }
 
         // Fallback: match by pixel count and height ranges (for non-standard labels or when height matching isn't precise)
+        // IMPORTANT: Check patterns in order from HIGHEST to LOWEST quality to avoid incorrect matches
+        // Also, only match if the detected resolution actually falls within the expected range for that quality
+        QualityVariant patternMatch = null;
+        
+        // Check 4K first (highest quality)
         for (QualityVariant variant : variants) {
             String label = variant.label.toLowerCase();
-
-            // Check for common patterns with tighter ranges
-            if (label.contains("4k") || label.contains("2160")) {
-                if (height >= 2000 && totalPixels >= 3500000) { // 4K: 3840x2160 or close
-                    Log.d("MediaViewerFragment", "Matched 4K pattern: " + variant.label);
-                    return variant.label;
-                }
-            } else if (label.contains("1080") || label.contains("full hd")) {
-                if (height >= 1000 && height < 2000 && totalPixels >= 1800000 && totalPixels < 3500000) {
-                    Log.d("MediaViewerFragment", "Matched 1080p pattern: " + variant.label);
-                    return variant.label;
-                }
-            } else if (label.contains("720") || label.contains("hd")) {
-                if (height >= 650 && height < 1000 && totalPixels >= 800000 && totalPixels < 1800000) {
-                    Log.d("MediaViewerFragment", "Matched 720p pattern: " + variant.label);
-                    return variant.label;
-                }
-            } else if (label.contains("480") || label.contains("sd")) {
-                if (height >= 400 && height < 650 && totalPixels >= 300000 && totalPixels < 800000) {
-                    Log.d("MediaViewerFragment", "Matched 480p pattern: " + variant.label);
-                    return variant.label;
-                }
-            } else if (label.contains("360")) {
-                if (height >= 300 && height < 400 && totalPixels >= 100000 && totalPixels < 300000) {
-                    Log.d("MediaViewerFragment", "Matched 360p pattern: " + variant.label);
-                    return variant.label;
-                }
+            if ((label.contains("4k") || label.contains("2160")) && height >= 2000 && totalPixels >= 3500000) {
+                Log.d("MediaViewerFragment", "Matched 4K pattern: " + variant.label);
+                return variant.label;
+            }
+        }
+        
+        // Check 1080p
+        for (QualityVariant variant : variants) {
+            String label = variant.label.toLowerCase();
+            if ((label.contains("1080") || label.contains("full hd")) && height >= 1000 && height < 2000 && totalPixels >= 1800000 && totalPixels < 3500000) {
+                Log.d("MediaViewerFragment", "Matched 1080p pattern: " + variant.label);
+                return variant.label;
+            }
+        }
+        
+        // Check 720p
+        for (QualityVariant variant : variants) {
+            String label = variant.label.toLowerCase();
+            if ((label.contains("720") || label.contains("hd")) && height >= 650 && height < 1000 && totalPixels >= 800000 && totalPixels < 1800000) {
+                Log.d("MediaViewerFragment", "Matched 720p pattern: " + variant.label);
+                return variant.label;
+            }
+        }
+        
+        // Check 480p
+        for (QualityVariant variant : variants) {
+            String label = variant.label.toLowerCase();
+            if ((label.contains("480") || label.contains("sd")) && height >= 400 && height < 650 && totalPixels >= 300000 && totalPixels < 800000) {
+                Log.d("MediaViewerFragment", "Matched 480p pattern: " + variant.label);
+                return variant.label;
+            }
+        }
+        
+        // Check 360p last (lowest quality) - only if resolution actually matches
+        for (QualityVariant variant : variants) {
+            String label = variant.label.toLowerCase();
+            if (label.contains("360") && height >= 300 && height < 400 && totalPixels >= 100000 && totalPixels < 300000) {
+                Log.d("MediaViewerFragment", "Matched 360p pattern: " + variant.label);
+                return variant.label;
             }
         }
 
         // Last resort: return the variant closest in height (even if difference is larger)
+        // This ensures we always return something if we have variants, but only if height-based matching found something
         if (bestMatch != null) {
             Log.d("MediaViewerFragment", "Using best match by height: " + bestMatch.label + " (diff: " + minHeightDiff + ")");
             return bestMatch.label;
@@ -2045,9 +2052,16 @@ public class MediaViewerFragment extends DialogFragment {
                                     lastDetectedQuality = actualPlayingQuality;
                                     Log.d("MediaViewerFragment", "Quality updated to: " + actualPlayingQuality);
                                 }
-                            } else if (qualityCheckCounter % 2 == 0) {
-                                // Check every 1 second even if size hasn't changed (for track selection changes)
+                            } else {
+                                // Check every call to catch track selection changes even if video size hasn't changed
+                                // This is important for adaptive streaming where ExoPlayer might switch tracks
+                                // without immediately changing the reported video size
                                 updateAutoQuality();
+                                // Check if quality changed
+                                if (actualPlayingQuality != null && !actualPlayingQuality.equals(lastDetectedQuality)) {
+                                    lastDetectedQuality = actualPlayingQuality;
+                                    Log.d("MediaViewerFragment", "Quality updated to: " + actualPlayingQuality);
+                                }
                             }
                         }
                     }
