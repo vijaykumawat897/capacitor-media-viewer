@@ -64,6 +64,7 @@ class MediaViewerController: UIViewController, UIScrollViewDelegate, UIGestureRe
     
     // Screen wake lock
     private var keepScreenOn = false
+    private var currentImageUrl: String?
     
     init(mediaItems: [MediaItem], currentIndex: Int, title: String, plugin: MediaViewerPlugin) {
         self.mediaItems = mediaItems
@@ -507,10 +508,13 @@ class MediaViewerController: UIViewController, UIScrollViewDelegate, UIGestureRe
             player.play()
             playbackEnded = false
             showControls()
+            updatePlayPauseButton(isPlaying: true)
         } else if player.rate > 0 {
             player.pause()
+            updatePlayPauseButton(isPlaying: false)
         } else {
             player.play()
+            updatePlayPauseButton(isPlaying: true)
         }
         scheduleControlsHide()
     }
@@ -551,9 +555,6 @@ class MediaViewerController: UIViewController, UIScrollViewDelegate, UIGestureRe
     private func displayCurrentMedia() {
         guard currentIndex >= 0 && currentIndex < mediaItems.count else { return }
         
-        releasePlayer()
-        resetMediaViews()
-        
         let item = mediaItems[currentIndex]
         
         // Reset quality to Auto for new video
@@ -576,6 +577,8 @@ class MediaViewerController: UIViewController, UIScrollViewDelegate, UIGestureRe
         }
         
         if item.type == "VIDEO" {
+            releasePlayer()
+            resetMediaViews()
             displayVideo(item)
         } else {
             displayImage(item)
@@ -585,15 +588,12 @@ class MediaViewerController: UIViewController, UIScrollViewDelegate, UIGestureRe
     }
     
     private func resetMediaViews() {
+        // Video cleanup ONLY
         if let playerLayer = playerLayer {
             playerLayer.removeFromSuperlayer()
             self.playerLayer = nil
         }
-        imageView?.image = nil
-        imageView?.removeFromSuperview()
-        imageView = nil
-        imageScrollView?.removeFromSuperview()
-        imageScrollView = nil
+
         videoThumbnail?.image = nil
         videoThumbnail?.isHidden = true
     }
@@ -767,67 +767,91 @@ class MediaViewerController: UIViewController, UIScrollViewDelegate, UIGestureRe
     
     private func displayImage(_ item: MediaItem) {
         guard let url = URL(string: item.path) else { return }
-        
+
         videoThumbnail?.isHidden = true
-        
-        // Remove previous scroll view if exists
-        imageScrollView?.removeFromSuperview()
-        imageScrollView = nil
-        imageView = nil
-        
-        // Create scroll view for zoom
-        let scrollView = UIScrollView()
-        scrollView.delegate = self
-        scrollView.minimumZoomScale = 1.0
-        scrollView.maximumZoomScale = 4.0
-        scrollView.showsHorizontalScrollIndicator = false
-        scrollView.showsVerticalScrollIndicator = false
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.backgroundColor = .black
-        
-        // Create image view
-        let imgView = UIImageView()
-        imgView.contentMode = .scaleAspectFit
-        imgView.translatesAutoresizingMaskIntoConstraints = false
-        imgView.backgroundColor = .black
-        imgView.isUserInteractionEnabled = true
-        
-        // Add double tap gesture for zoom
-        let doubleTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleImageDoubleTap(_:)))
-        doubleTapGesture.numberOfTapsRequired = 2
-        imgView.addGestureRecognizer(doubleTapGesture)
-        
-        scrollView.addSubview(imgView)
-        containerView.addSubview(scrollView)
-        
-        NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: containerView.topAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
-            
-            imgView.topAnchor.constraint(equalTo: scrollView.topAnchor),
-            imgView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
-            imgView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
-            imgView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
-            imgView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
-            imgView.heightAnchor.constraint(equalTo: scrollView.heightAnchor)
-        ])
-        
-        imageScrollView = scrollView
-        imageView = imgView
-        
-        // Load image asynchronously
+
+        // 🔹 SAME IMAGE → no reload, no blink
+        if currentImageUrl == item.path,
+           let imageView = imageView,
+           imageView.image != nil {
+
+            imageScrollView?.setZoomScale(imageScrollView?.minimumZoomScale ?? 1.0, animated: false)
+            imageScrollView?.contentOffset = .zero
+            hideControls()
+            return
+        }
+
+        currentImageUrl = item.path
+
+        let scrollView: UIScrollView
+        let imgView: UIImageView
+
+        if let existingScrollView = imageScrollView,
+           let existingImageView = imageView {
+
+            scrollView = existingScrollView
+            imgView = existingImageView
+
+        } else {
+            scrollView = UIScrollView()
+            scrollView.delegate = self
+            scrollView.minimumZoomScale = 1.0
+            scrollView.maximumZoomScale = 4.0
+            scrollView.showsHorizontalScrollIndicator = false
+            scrollView.showsVerticalScrollIndicator = false
+            scrollView.translatesAutoresizingMaskIntoConstraints = false
+            scrollView.backgroundColor = .black
+
+            imgView = UIImageView()
+            imgView.contentMode = .scaleAspectFit
+            imgView.translatesAutoresizingMaskIntoConstraints = false
+            imgView.backgroundColor = .black
+            imgView.isUserInteractionEnabled = true
+
+            let doubleTapGesture = UITapGestureRecognizer(
+                target: self,
+                action: #selector(handleImageDoubleTap(_:))
+            )
+            doubleTapGesture.numberOfTapsRequired = 2
+            imgView.addGestureRecognizer(doubleTapGesture)
+
+            scrollView.addSubview(imgView)
+            containerView.addSubview(scrollView)
+
+            NSLayoutConstraint.activate([
+                scrollView.topAnchor.constraint(equalTo: containerView.topAnchor),
+                scrollView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+                scrollView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+                scrollView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
+
+                imgView.topAnchor.constraint(equalTo: scrollView.topAnchor),
+                imgView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+                imgView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+                imgView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+                imgView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+                imgView.heightAnchor.constraint(equalTo: scrollView.heightAnchor)
+            ])
+
+            imageScrollView = scrollView
+            imageView = imgView
+        }
+
+        // 🔹 Load image WITHOUT clearing old one
         if url.isFileURL {
             imgView.image = UIImage(contentsOfFile: url.path)
         } else {
             loadImage(from: url) { [weak self] image in
                 DispatchQueue.main.async {
-                    self?.imageView?.image = image
+                    guard
+                        let self = self,
+                        self.currentImageUrl == item.path
+                    else { return }
+    
+                    self.imageView?.image = image
                 }
             }
         }
-        
+
         hideControls()
     }
     
@@ -1339,12 +1363,10 @@ class MediaViewerController: UIViewController, UIScrollViewDelegate, UIGestureRe
     }
     
     private func getCurrentMediaView() -> UIView? {
-        if imageScrollView != nil && imageScrollView?.isHidden == false {
-            return imageScrollView
-        } else if videoContainer != nil && videoContainer.isHidden == false {
-            return videoContainer
+        if isSwiping {
+            return imageScrollView ?? videoContainer
         }
-        return nil
+        return imageScrollView?.isHidden == false ? imageScrollView : videoContainer ?? nil
     }
     
     private func createMediaPreview(for item: MediaItem) -> UIView {

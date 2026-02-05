@@ -122,6 +122,7 @@ public class MediaViewerFragment extends DialogFragment {
     private int lastVideoWidth = 0;
     private int lastVideoHeight = 0;
     private float lastPixelRatio = 1f;
+    private String currentImageUrl = null;
 
     public static MediaViewerFragment newInstance(List<MediaItem> items, int currentIndex, String title, MediaViewerListener listener) {
         MediaViewerFragment fragment = new MediaViewerFragment();
@@ -729,7 +730,11 @@ public class MediaViewerFragment extends DialogFragment {
                                 if (
                                     mediaImageView.getDrawable() != null && mediaImageView.getWidth() > 0 && mediaImageView.getHeight() > 0
                                 ) {
-                                    mediaImageView.fitToScreenPublic();
+                                    if (mediaImageView.getWidth() > 0) {
+                                        mediaImageView.fitToScreenPublic();
+                                    } else {
+                                        mediaImageView.post(() -> mediaImageView.fitToScreenPublic());
+                                    }
                                 }
                             });
                         }
@@ -744,9 +749,6 @@ public class MediaViewerFragment extends DialogFragment {
         if (mediaItems == null || currentIndex < 0 || currentIndex >= mediaItems.size()) {
             return;
         }
-
-        releasePlayer();
-        resetMediaViews();
 
         MediaItem item = mediaItems.get(currentIndex);
 
@@ -773,6 +775,8 @@ public class MediaViewerFragment extends DialogFragment {
         }
 
         if ("VIDEO".equals(item.type)) {
+            releasePlayer();
+            resetMediaViews();
             displayVideo(item);
         } else {
             displayImage(item);
@@ -786,14 +790,10 @@ public class MediaViewerFragment extends DialogFragment {
     private void resetMediaViews() {
         if (textureView != null) {
             textureView.setSurfaceTextureListener(null);
-            textureView.setAlpha(0f);
-        }
-        if (mediaImageView != null) {
-            mediaImageView.setImageDrawable(null);
-            mediaImageView.setVisibility(View.GONE);
+            textureView.setVisibility(View.GONE); // better than alpha
         }
         if (videoThumbnail != null) {
-            videoThumbnail.setImageDrawable(null);
+            // videoThumbnail.setImageDrawable(null);
             videoThumbnail.setVisibility(View.GONE);
         }
     }
@@ -1955,6 +1955,13 @@ public class MediaViewerFragment extends DialogFragment {
     }
 
     private void displayImage(MediaItem item) {
+        if (item.path.equals(currentImageUrl)
+            && mediaImageView.getDrawable() != null) {
+            mediaImageView.resetZoom();
+            mediaImageView.fitToScreenPublic();
+            return;
+        }
+        currentImageUrl = item.path;
         if (textureView != null) {
             textureView.setVisibility(View.GONE);
         }
@@ -1971,8 +1978,10 @@ public class MediaViewerFragment extends DialogFragment {
         mediaImageView.resetZoom();
 
         Glide
-            .with(this)
+            .with(requireContext())
             .load(item.path)
+            .dontAnimate()
+            .dontTransform()
             .listener(
                 new com.bumptech.glide.request.RequestListener<android.graphics.drawable.Drawable>() {
                     @Override
@@ -2002,7 +2011,11 @@ public class MediaViewerFragment extends DialogFragment {
                                         mediaImageView.getWidth() > 0 &&
                                         mediaImageView.getHeight() > 0
                                     ) {
-                                        mediaImageView.fitToScreenPublic();
+                                        if (mediaImageView.getWidth() > 0) {
+                                            mediaImageView.fitToScreenPublic();
+                                        } else {
+                                            mediaImageView.post(() -> mediaImageView.fitToScreenPublic());
+                                        }
                                     }
                                 },
                                 50
@@ -2357,7 +2370,7 @@ public class MediaViewerFragment extends DialogFragment {
             imageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
             container.addView(imageView);
 
-            Glide.with(this).load(item.path).into(imageView);
+            Glide.with(requireContext()).load(item.path).dontAnimate().dontTransform().into(imageView);
         }
 
         return container;
