@@ -180,6 +180,8 @@ class MediaViewerController: UIViewController, UIScrollViewDelegate, UIGestureRe
         settingsButton.tintColor = .white
         settingsButton.translatesAutoresizingMaskIntoConstraints = false
         settingsButton.addTarget(self, action: #selector(showSettingsPopup), for: .touchUpInside)
+        // Settings is video-only (avoid flashing visible before first media is displayed)
+        settingsButton.isHidden = true
         overlayContainer.addSubview(settingsButton)
         
         // Center controls
@@ -475,6 +477,9 @@ class MediaViewerController: UIViewController, UIScrollViewDelegate, UIGestureRe
     }
     
     private func isPointInsideView(_ view: UIView, point: CGPoint) -> Bool {
+        guard !view.isHidden, view.alpha > 0.01, view.isUserInteractionEnabled else {
+            return false
+        }
         let frame = view.convert(view.bounds, to: self.view)
         return frame.contains(point)
     }
@@ -585,6 +590,11 @@ class MediaViewerController: UIViewController, UIScrollViewDelegate, UIGestureRe
         }
         
         plugin?.notifyMediaIndexChanged(currentIndex)
+    }
+
+    private func isCurrentItemVideo() -> Bool {
+        guard currentIndex >= 0 && currentIndex < mediaItems.count else { return false }
+        return mediaItems[currentIndex].type.uppercased() == "VIDEO"
     }
     
     private func resetMediaViews() {
@@ -769,6 +779,7 @@ class MediaViewerController: UIViewController, UIScrollViewDelegate, UIGestureRe
         guard let url = URL(string: item.path) else { return }
 
         videoThumbnail?.isHidden = true
+        settingsButton.isHidden = true
 
         // 🔹 SAME IMAGE → no reload, no blink
         if currentImageUrl == item.path,
@@ -959,7 +970,8 @@ class MediaViewerController: UIViewController, UIScrollViewDelegate, UIGestureRe
         controlsContainer.isHidden = false
         centerControls.isHidden = false
         backButton.isHidden = false
-        settingsButton.isHidden = false
+        // Settings is video-only
+        settingsButton.isHidden = !isCurrentItemVideo()
         controlsVisible = true
     }
     

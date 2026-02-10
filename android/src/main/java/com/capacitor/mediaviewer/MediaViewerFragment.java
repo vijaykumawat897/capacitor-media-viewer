@@ -390,8 +390,17 @@ public class MediaViewerFragment extends DialogFragment {
         }
         
         if (settingsButton != null) {
-            settingsButton.setVisibility(View.VISIBLE);
+            // Settings is video-only
+            settingsButton.setVisibility(isCurrentItemVideo() ? View.VISIBLE : View.GONE);
         }
+    }
+
+    private boolean isCurrentItemVideo() {
+        if (mediaItems == null || currentIndex < 0 || currentIndex >= mediaItems.size()) {
+            return false;
+        }
+        MediaItem item = mediaItems.get(currentIndex);
+        return item != null && "VIDEO".equals(item.type);
     }
 
     private void setupGestureDetector() {
@@ -802,6 +811,11 @@ public class MediaViewerFragment extends DialogFragment {
     private void displayVideo(MediaItem item) {
         if (textureView == null) {
             return;
+        }
+
+        // Settings is video-only
+        if (settingsButton != null) {
+            settingsButton.setVisibility(View.VISIBLE);
         }
 
         // Keep TextureView visible for surface to work, but thumbnail will cover it
@@ -1901,7 +1915,8 @@ public class MediaViewerFragment extends DialogFragment {
             backButton.setVisibility(View.VISIBLE);
         }
         if (settingsButton != null) {
-            settingsButton.setVisibility(View.VISIBLE);
+            // Settings is video-only
+            settingsButton.setVisibility(isCurrentItemVideo() ? View.VISIBLE : View.GONE);
         }
     }
 
@@ -1962,6 +1977,10 @@ public class MediaViewerFragment extends DialogFragment {
             return;
         }
         currentImageUrl = item.path;
+        // Settings is video-only
+        if (settingsButton != null) {
+            settingsButton.setVisibility(View.GONE);
+        }
         if (textureView != null) {
             textureView.setVisibility(View.GONE);
         }
