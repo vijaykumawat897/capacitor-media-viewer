@@ -1,6 +1,6 @@
 {
   "name": "capacitor-media-viewer",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "description": "A native media viewer for Capacitor apps with support for videos and images, swipe navigation, and quality selection",
   "main": "dist/esm/src/index.js",
   "module": "dist/esm/src/index.js",
