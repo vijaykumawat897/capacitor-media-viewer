@@ -1988,7 +1988,9 @@ public class MediaViewerFragment extends DialogFragment {
             return;
         }
 
-        mediaImageView.setVisibility(View.VISIBLE);
+        // Keep image view invisible until image is loaded and properly scaled
+        // This prevents the "pop" effect where image shows at wrong size briefly
+        mediaImageView.setVisibility(View.INVISIBLE);
 
         // Update overlay to allow touch events through
         updateOverlayClickable();
@@ -2010,6 +2012,10 @@ public class MediaViewerFragment extends DialogFragment {
                         com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable> target,
                         boolean isFirstResource
                     ) {
+                        // Show the view even on failure so user sees something
+                        if (mediaImageView != null) {
+                            mediaImageView.setVisibility(View.VISIBLE);
+                        }
                         return false;
                     }
 
@@ -2021,24 +2027,32 @@ public class MediaViewerFragment extends DialogFragment {
                         com.bumptech.glide.load.DataSource dataSource,
                         boolean isFirstResource
                     ) {
-                        // Fit to screen after image is loaded (only once to prevent flickering)
+                        // Fit to screen after image is loaded, then make visible
                         if (mediaImageView != null) {
-                            mediaImageView.postDelayed(
-                                () -> {
-                                    if (
-                                        mediaImageView.getDrawable() != null &&
-                                        mediaImageView.getWidth() > 0 &&
-                                        mediaImageView.getHeight() > 0
-                                    ) {
-                                        if (mediaImageView.getWidth() > 0) {
-                                            mediaImageView.fitToScreenPublic();
-                                        } else {
-                                            mediaImageView.post(() -> mediaImageView.fitToScreenPublic());
-                                        }
+                            mediaImageView.post(() -> {
+                                if (mediaImageView.getDrawable() != null) {
+                                    // First scale the image properly
+                                    if (mediaImageView.getWidth() > 0 && mediaImageView.getHeight() > 0) {
+                                        mediaImageView.fitToScreenPublic();
+                                        // Now make it visible after scaling is applied
+                                        mediaImageView.setVisibility(View.VISIBLE);
+                                    } else {
+                                        // View not measured yet, wait for layout
+                                        mediaImageView.getViewTreeObserver().addOnGlobalLayoutListener(
+                                            new ViewTreeObserver.OnGlobalLayoutListener() {
+                                                @Override
+                                                public void onGlobalLayout() {
+                                                    mediaImageView.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                                                    if (mediaImageView.getDrawable() != null) {
+                                                        mediaImageView.fitToScreenPublic();
+                                                        mediaImageView.setVisibility(View.VISIBLE);
+                                                    }
+                                                }
+                                            }
+                                        );
                                     }
-                                },
-                                50
-                            ); // Small delay to ensure layout is complete
+                                }
+                            });
                         }
                         return false;
                     }

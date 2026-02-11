@@ -847,9 +847,15 @@ class MediaViewerController: UIViewController, UIScrollViewDelegate, UIGestureRe
             imageView = imgView
         }
 
-        // 🔹 Load image WITHOUT clearing old one
+        // Keep scroll view hidden until image loads to prevent "pop" effect
+        // where image briefly shows at wrong size
+        scrollView.isHidden = true
+
+        // 🔹 Load image and show only after loaded
         if url.isFileURL {
             imgView.image = UIImage(contentsOfFile: url.path)
+            // Show immediately for local files since image is loaded synchronously
+            scrollView.isHidden = false
         } else {
             loadImage(from: url) { [weak self] image in
                 DispatchQueue.main.async {
@@ -859,6 +865,8 @@ class MediaViewerController: UIViewController, UIScrollViewDelegate, UIGestureRe
                     else { return }
     
                     self.imageView?.image = image
+                    // Show scroll view only after image has loaded
+                    self.imageScrollView?.isHidden = false
                 }
             }
         }
